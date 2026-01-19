@@ -1,5 +1,5 @@
-use crate::token::{LiteralKind, TokenKind};
 use crate::Token;
+use crate::token::{LiteralKind, TokenKind};
 
 pub struct Cursor<'a> {
     input: &'a str,

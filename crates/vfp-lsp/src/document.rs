@@ -2,7 +2,7 @@
 
 use dashmap::DashMap;
 use tower_lsp::lsp_types::*;
-use vfp_lexer::{tokenize, Token, TokenKind};
+use vfp_lexer::{Token, TokenKind, tokenize};
 
 /// A document being edited.
 #[derive(Debug)]
@@ -183,11 +183,11 @@ impl Document {
                             let next = &self.tokens[j];
                             if !next.kind.is_trivia() {
                                 if next.kind == TokenKind::Ident {
-                                    let name = &self.content
-                                        [name_offset..name_offset + next.len as usize];
+                                    let name =
+                                        &self.content[name_offset..name_offset + next.len as usize];
                                     let start = self.offset_to_position(start_offset);
-                                    let end = self
-                                        .offset_to_position(name_offset + next.len as usize);
+                                    let end =
+                                        self.offset_to_position(name_offset + next.len as usize);
 
                                     #[allow(deprecated)]
                                     symbols.push(DocumentSymbol {
@@ -235,8 +235,8 @@ impl Document {
                                         let name_token = &self.tokens[k];
                                         if !name_token.kind.is_trivia() {
                                             if name_token.kind == TokenKind::Ident {
-                                                let name = &self.content
-                                                    [name_offset..name_offset + name_token.len as usize];
+                                                let name = &self.content[name_offset
+                                                    ..name_offset + name_token.len as usize];
                                                 let start = self.offset_to_position(offset);
                                                 let end = self.offset_to_position(
                                                     name_offset + name_token.len as usize,
@@ -280,6 +280,65 @@ impl Document {
         }
 
         symbols
+    }
+
+    /// Find the range of a keyword definition in the document
+    pub fn find_keyword_definition(&self, word: &str) -> Option<Range> {
+        let mut offset = 0;
+        let mut i = 0;
+
+        while i < self.tokens.len() {
+            let token = &self.tokens[i];
+
+            if token.kind == TokenKind::Ident {
+                let text = &self.content[offset..offset + token.len as usize];
+                let upper = text.to_ascii_uppercase();
+
+                // Check if this is the keyword we're looking for
+                if text.eq_ignore_ascii_case(word) {
+                    match upper.as_str() {
+                        "FUNCTION" | "PROCEDURE" => {
+                            // Look ahead for the function/procedure name
+                            let mut j = i + 1;
+                            let mut name_offset = offset + token.len as usize;
+
+                            while j < self.tokens.len() {
+                                let next = &self.tokens[j];
+                                if !next.kind.is_trivia() {
+                                    if next.kind == TokenKind::Ident {
+                                        // Return the FUNCTION/PROCEDURE keyword itself
+                                        let start = self.offset_to_position(offset);
+                                        let end =
+                                            self.offset_to_position(offset + token.len as usize);
+                                        return Some(Range::new(start, end));
+                                    }
+                                    break;
+                                }
+                                name_offset += next.len as usize;
+                                j += 1;
+                            }
+                        }
+                        "SELECT" => {
+                            // For SELECT, return the SELECT keyword itself
+                            let start = self.offset_to_position(offset);
+                            let end = self.offset_to_position(offset + token.len as usize);
+                            return Some(Range::new(start, end));
+                        }
+                        _ => {
+                            // For other keywords, return their position
+                            let start = self.offset_to_position(offset);
+                            let end = self.offset_to_position(offset + token.len as usize);
+                            return Some(Range::new(start, end));
+                        }
+                    }
+                }
+            }
+
+            offset += token.len as usize;
+            i += 1;
+        }
+
+        None
     }
 }
 

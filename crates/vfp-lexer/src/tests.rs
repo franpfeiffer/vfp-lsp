@@ -1,6 +1,6 @@
 //! Tests for the VFP lexer.
 
-use crate::{tokenize, LiteralKind, Token, TokenKind};
+use crate::{LiteralKind, Token, TokenKind, tokenize};
 
 /// Helper to collect tokens from source.
 fn lex(source: &str) -> Vec<Token> {
@@ -251,7 +251,13 @@ fn test_hash_not_preprocessor() {
     let tokens = lex_kinds("# 1");
     assert_eq!(
         tokens,
-        vec![TokenKind::Hash, TokenKind::Whitespace, TokenKind::Literal { kind: LiteralKind::Int }]
+        vec![
+            TokenKind::Hash,
+            TokenKind::Whitespace,
+            TokenKind::Literal {
+                kind: LiteralKind::Int
+            }
+        ]
     );
 }
 
@@ -371,11 +377,26 @@ fn test_integers() {
     assert_eq!(
         tokens,
         vec![
-            (TokenKind::Literal { kind: LiteralKind::Int }, "123"),
+            (
+                TokenKind::Literal {
+                    kind: LiteralKind::Int
+                },
+                "123"
+            ),
             (TokenKind::Whitespace, " "),
-            (TokenKind::Literal { kind: LiteralKind::Int }, "0"),
+            (
+                TokenKind::Literal {
+                    kind: LiteralKind::Int
+                },
+                "0"
+            ),
             (TokenKind::Whitespace, " "),
-            (TokenKind::Literal { kind: LiteralKind::Int }, "999"),
+            (
+                TokenKind::Literal {
+                    kind: LiteralKind::Int
+                },
+                "999"
+            ),
         ]
     );
 }
@@ -386,11 +407,26 @@ fn test_floats() {
     assert_eq!(
         tokens,
         vec![
-            (TokenKind::Literal { kind: LiteralKind::Float }, "1.5"),
+            (
+                TokenKind::Literal {
+                    kind: LiteralKind::Float
+                },
+                "1.5"
+            ),
             (TokenKind::Whitespace, " "),
-            (TokenKind::Literal { kind: LiteralKind::Float }, "3.14159"),
+            (
+                TokenKind::Literal {
+                    kind: LiteralKind::Float
+                },
+                "3.14159"
+            ),
             (TokenKind::Whitespace, " "),
-            (TokenKind::Literal { kind: LiteralKind::Float }, "0.001"),
+            (
+                TokenKind::Literal {
+                    kind: LiteralKind::Float
+                },
+                "0.001"
+            ),
         ]
     );
 }
@@ -401,11 +437,26 @@ fn test_scientific_notation() {
     assert_eq!(
         tokens,
         vec![
-            (TokenKind::Literal { kind: LiteralKind::Float }, "1e10"),
+            (
+                TokenKind::Literal {
+                    kind: LiteralKind::Float
+                },
+                "1e10"
+            ),
             (TokenKind::Whitespace, " "),
-            (TokenKind::Literal { kind: LiteralKind::Float }, "1.5e-3"),
+            (
+                TokenKind::Literal {
+                    kind: LiteralKind::Float
+                },
+                "1.5e-3"
+            ),
             (TokenKind::Whitespace, " "),
-            (TokenKind::Literal { kind: LiteralKind::Float }, "2E+5"),
+            (
+                TokenKind::Literal {
+                    kind: LiteralKind::Float
+                },
+                "2E+5"
+            ),
         ]
     );
 }
@@ -416,11 +467,26 @@ fn test_hex() {
     assert_eq!(
         tokens,
         vec![
-            (TokenKind::Literal { kind: LiteralKind::Hex }, "0xFF"),
+            (
+                TokenKind::Literal {
+                    kind: LiteralKind::Hex
+                },
+                "0xFF"
+            ),
             (TokenKind::Whitespace, " "),
-            (TokenKind::Literal { kind: LiteralKind::Hex }, "0x1A2B"),
+            (
+                TokenKind::Literal {
+                    kind: LiteralKind::Hex
+                },
+                "0x1A2B"
+            ),
             (TokenKind::Whitespace, " "),
-            (TokenKind::Literal { kind: LiteralKind::Hex }, "0hABCD"),
+            (
+                TokenKind::Literal {
+                    kind: LiteralKind::Hex
+                },
+                "0hABCD"
+            ),
         ]
     );
 }
@@ -498,7 +564,12 @@ fn test_date_literal() {
     let tokens = lex_with_text("{^2024-01-15}");
     assert_eq!(
         tokens,
-        vec![(TokenKind::Literal { kind: LiteralKind::Date }, "{^2024-01-15}")]
+        vec![(
+            TokenKind::Literal {
+                kind: LiteralKind::Date
+            },
+            "{^2024-01-15}"
+        )]
     );
 }
 
@@ -508,7 +579,9 @@ fn test_datetime_literal() {
     assert_eq!(
         tokens,
         vec![(
-            TokenKind::Literal { kind: LiteralKind::DateTime },
+            TokenKind::Literal {
+                kind: LiteralKind::DateTime
+            },
             "{^2024-01-15 10:30:00}"
         )]
     );
@@ -520,7 +593,9 @@ fn test_datetime_literal_with_t() {
     assert_eq!(
         tokens,
         vec![(
-            TokenKind::Literal { kind: LiteralKind::DateTime },
+            TokenKind::Literal {
+                kind: LiteralKind::DateTime
+            },
             "{^2024-01-15T10:30:00}"
         )]
     );
@@ -534,13 +609,19 @@ fn test_brace_not_date() {
         tokens,
         vec![
             TokenKind::LBrace,
-            TokenKind::Literal { kind: LiteralKind::Int },
+            TokenKind::Literal {
+                kind: LiteralKind::Int
+            },
             TokenKind::Comma,
             TokenKind::Whitespace,
-            TokenKind::Literal { kind: LiteralKind::Int },
+            TokenKind::Literal {
+                kind: LiteralKind::Int
+            },
             TokenKind::Comma,
             TokenKind::Whitespace,
-            TokenKind::Literal { kind: LiteralKind::Int },
+            TokenKind::Literal {
+                kind: LiteralKind::Int
+            },
             TokenKind::RBrace,
         ]
     );
@@ -682,6 +763,11 @@ fn test_dot_followed_by_number() {
     let tokens = lex_kinds(".5");
     assert_eq!(
         tokens,
-        vec![TokenKind::Dot, TokenKind::Literal { kind: LiteralKind::Int }]
+        vec![
+            TokenKind::Dot,
+            TokenKind::Literal {
+                kind: LiteralKind::Int
+            }
+        ]
     );
 }

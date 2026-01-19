@@ -50,8 +50,8 @@ pub fn server_capabilities() -> ServerCapabilities {
         }),
 
         // Semantic tokens (for syntax highlighting)
-        semantic_tokens_provider: Some(
-            SemanticTokensServerCapabilities::SemanticTokensOptions(SemanticTokensOptions {
+        semantic_tokens_provider: Some(SemanticTokensServerCapabilities::SemanticTokensOptions(
+            SemanticTokensOptions {
                 work_done_progress_options: WorkDoneProgressOptions::default(),
                 legend: SemanticTokensLegend {
                     token_types: semantic_token_types(),
@@ -59,8 +59,8 @@ pub fn server_capabilities() -> ServerCapabilities {
                 },
                 range: Some(false),
                 full: Some(SemanticTokensFullOptions::Bool(true)),
-            }),
-        ),
+            },
+        )),
 
         // Other capabilities we might add later
         rename_provider: None,

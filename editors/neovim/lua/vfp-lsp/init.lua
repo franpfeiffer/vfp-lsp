@@ -34,8 +34,8 @@ function M.setup(opts)
 
   -- Check if vfp config already exists in lspconfig
   local configs = require("lspconfig.configs")
-  if not configs.vfp_lsp then
-    configs.vfp_lsp = {
+  if not configs.vfp then
+    configs.vfp = {
       default_config = {
         cmd = cmd,
         filetypes = M.config.filetypes,
@@ -51,7 +51,7 @@ function M.setup(opts)
   end
 
   -- Setup the LSP
-  lspconfig.vfp_lsp.setup({
+  lspconfig.vfp.setup({
     cmd = cmd,
     filetypes = M.config.filetypes,
     on_attach = M.config.on_attach,

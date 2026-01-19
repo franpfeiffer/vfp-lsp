@@ -3,7 +3,7 @@
 use tower_lsp::jsonrpc::Result;
 use tower_lsp::lsp_types::*;
 use tower_lsp::{Client, LanguageServer};
-use vfp_lexer::{is_keyword, is_sql_keyword, TokenKind};
+use vfp_lexer::{TokenKind, is_keyword, is_sql_keyword};
 
 use crate::capabilities::server_capabilities;
 use crate::document::DocumentStore;
@@ -19,6 +19,84 @@ impl Backend {
         Self {
             client,
             documents: DocumentStore::new(),
+        }
+    }
+
+    fn is_builtin_keyword(word: &str) -> bool {
+        matches!(
+            word,
+            "FUNCTION"
+                | "PROCEDURE"
+                | "CLASS"
+                | "DEFINE"
+                | "ENDDEFINE"
+                | "SELECT"
+                | "FROM"
+                | "WHERE"
+                | "ORDER"
+                | "BY"
+                | "GROUP"
+                | "HAVING"
+                | "IF"
+                | "ELSE"
+                | "ENDIF"
+                | "FOR"
+                | "ENDFOR"
+                | "WHILE"
+                | "ENDWHILE"
+                | "DO"
+                | "CASE"
+                | "OTHERWISE"
+                | "ENDCASE"
+                | "TRY"
+                | "CATCH"
+                | "FINALLY"
+                | "ENDTRY"
+                | "WITH"
+                | "ENDWITH"
+                | "RETURN"
+                | "LOCAL"
+                | "PRIVATE"
+                | "PUBLIC"
+                | "PARAMETERS"
+        )
+    }
+
+    fn get_builtin_definition(&self, word: &str) -> Option<(String, String)> {
+        match word {
+            "SELECT" => Some((
+                "SELECT [fields] FROM [table] WHERE [condition]".to_string(),
+                "SQL SELECT command - retrieves data from tables".to_string(),
+            )),
+            "FUNCTION" => Some((
+                "FUNCTION FunctionName([parameters]) AS ReturnType".to_string(),
+                "Defines a user-defined function".to_string(),
+            )),
+            "PROCEDURE" => Some((
+                "PROCEDURE ProcedureName([parameters])".to_string(),
+                "Defines a user-defined procedure".to_string(),
+            )),
+            "IF" => Some((
+                "IF [condition] [commands] ELSE [commands] ENDIF".to_string(),
+                "Conditional execution".to_string(),
+            )),
+            "FOR" => Some((
+                "FOR variable = start TO end [STEP increment] [commands] ENDFOR".to_string(),
+                "Loop with counter".to_string(),
+            )),
+            "WHILE" => Some((
+                "WHILE [condition] [commands] ENDWHILE".to_string(),
+                "Conditional loop".to_string(),
+            )),
+            "RETURN" => Some((
+                "RETURN [expression]".to_string(),
+                "Returns from function/procedure with optional value".to_string(),
+            )),
+            "DO" => Some((
+                "DO ProcedureName [WITH parameters]".to_string(),
+                "Calls a procedure".to_string(),
+            )),
+            _ => None,
         }
     }
 
@@ -194,8 +272,7 @@ impl LanguageServer for Backend {
             for token in &doc.tokens {
                 if token.kind == TokenKind::Ident {
                     let text = &doc.content[pos..pos + token.len as usize];
-                    if !is_keyword(text) && !is_sql_keyword(text) && seen.insert(text.to_string())
-                    {
+                    if !is_keyword(text) && !is_sql_keyword(text) && seen.insert(text.to_string()) {
                         completions.push(CompletionItem {
                             label: text.to_string(),
                             kind: Some(CompletionItemKind::VARIABLE),
@@ -239,7 +316,7 @@ impl LanguageServer for Backend {
             return Ok(None);
         };
 
-        // Search for definition in the same document
+        // Search for function/procedure/class definitions
         let symbols = doc.symbols();
         for symbol in symbols {
             if symbol.name.eq_ignore_ascii_case(&word) {
@@ -248,6 +325,14 @@ impl LanguageServer for Backend {
                     symbol.selection_range,
                 ))));
             }
+        }
+
+        // Check if it's a built-in keyword and create a definition in the current document
+        let upper_word = word.to_ascii_uppercase();
+        if let Some((_definition_line, _description)) = self.get_builtin_definition(&upper_word) {
+            // For now, don't provide go-to-definition for built-in keywords
+            // The hover functionality already shows the documentation
+            return Ok(None);
         }
 
         Ok(None)
@@ -465,38 +550,9 @@ const VFP_KEYWORDS: &[&str] = &[
 
 /// SQL keywords.
 const SQL_KEYWORDS: &[&str] = &[
-    "SELECT",
-    "FROM",
-    "WHERE",
-    "ORDER",
-    "BY",
-    "GROUP",
-    "HAVING",
-    "INTO",
-    "CURSOR",
-    "TABLE",
-    "INSERT",
-    "UPDATE",
-    "DELETE",
-    "SET",
-    "VALUES",
-    "JOIN",
-    "INNER",
-    "LEFT",
-    "RIGHT",
-    "OUTER",
-    "ON",
-    "DISTINCT",
-    "TOP",
-    "UNION",
-    "ALL",
-    "AND",
-    "OR",
-    "NOT",
-    "LIKE",
-    "BETWEEN",
-    "IS",
-    "NULL",
+    "SELECT", "FROM", "WHERE", "ORDER", "BY", "GROUP", "HAVING", "INTO", "CURSOR", "TABLE",
+    "INSERT", "UPDATE", "DELETE", "SET", "VALUES", "JOIN", "INNER", "LEFT", "RIGHT", "OUTER", "ON",
+    "DISTINCT", "TOP", "UNION", "ALL", "AND", "OR", "NOT", "LIKE", "BETWEEN", "IS", "NULL",
 ];
 
 /// Built-in VFP functions.
