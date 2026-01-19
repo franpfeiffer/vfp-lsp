@@ -129,6 +129,383 @@ impl Document {
             offset += token.len as usize;
         }
 
+        // Add semantic validation
+        diagnostics.extend(self.semantic_diagnostics());
+
+        // Add block structure validation
+        diagnostics.extend(self.block_diagnostics());
+
+        // Add duplicate definition detection
+        diagnostics.extend(self.duplicate_diagnostics());
+
+        diagnostics
+    }
+
+    /// Semantic validation with fuzzy keyword matching.
+    fn semantic_diagnostics(&self) -> Vec<Diagnostic> {
+        let mut diagnostics = Vec::new();
+        let mut offset = 0;
+
+        for token in &self.tokens {
+            if token.kind == TokenKind::Ident {
+                let text = &self.content[offset..offset + token.len as usize];
+                let upper = text.to_ascii_uppercase();
+
+                // Skip if it's a valid keyword
+                if !vfp_lexer::is_keyword(&upper) && !vfp_lexer::is_sql_keyword(&upper) {
+                    // Check for possible typos
+                    if let Some(suggestion) = find_similar_keyword(&upper) {
+                        let start = self.offset_to_position(offset);
+                        let end = self.offset_to_position(offset + token.len as usize);
+                        diagnostics.push(Diagnostic {
+                            range: Range::new(start, end),
+                            severity: Some(DiagnosticSeverity::WARNING),
+                            code: None,
+                            code_description: None,
+                            source: Some("vfp-lsp".to_string()),
+                            message: format!(
+                                "Possible misspelling. Did you mean '{}'?",
+                                suggestion
+                            ),
+                            related_information: None,
+                            tags: None,
+                            data: None,
+                        });
+                    }
+                }
+            }
+
+            offset += token.len as usize;
+        }
+
+        diagnostics
+    }
+
+    /// Block structure validation - checks for unclosed blocks.
+    fn block_diagnostics(&self) -> Vec<Diagnostic> {
+        let mut diagnostics = Vec::new();
+        let mut block_stack: Vec<(String, usize, Position)> = Vec::new();
+        let mut offset = 0;
+
+        for token in &self.tokens {
+            if token.kind == TokenKind::Ident {
+                let text = &self.content[offset..offset + token.len as usize];
+                let upper = text.to_ascii_uppercase();
+                let pos = self.offset_to_position(offset);
+
+                match upper.as_str() {
+                    // Block openers
+                    "IF" => block_stack.push(("IF".to_string(), offset, pos)),
+                    "FOR" => block_stack.push(("FOR".to_string(), offset, pos)),
+                    "WHILE" => {
+                        // Check if previous token was DO
+                        if !block_stack.last().is_some_and(|(k, _, _)| k == "DO_WHILE") {
+                            block_stack.push(("WHILE".to_string(), offset, pos));
+                        }
+                    }
+                    "DO" => {
+                        // Look ahead to see if it's DO WHILE or DO CASE
+                        block_stack.push(("DO".to_string(), offset, pos));
+                    }
+                    "SCAN" => block_stack.push(("SCAN".to_string(), offset, pos)),
+                    "TRY" => block_stack.push(("TRY".to_string(), offset, pos)),
+                    "WITH" => block_stack.push(("WITH".to_string(), offset, pos)),
+                    "TEXT" => block_stack.push(("TEXT".to_string(), offset, pos)),
+                    "CASE" => {
+                        // If previous was DO, convert to DO_CASE
+                        if let Some((kind, _, _)) = block_stack.last_mut() {
+                            if kind == "DO" {
+                                *kind = "DO_CASE".to_string();
+                            }
+                        }
+                    }
+                    "FUNCTION" => block_stack.push(("FUNCTION".to_string(), offset, pos)),
+                    "PROCEDURE" => block_stack.push(("PROCEDURE".to_string(), offset, pos)),
+                    "DEFINE" => block_stack.push(("DEFINE".to_string(), offset, pos)),
+
+                    // Block closers
+                    "ENDIF" => {
+                        if !close_block(&mut block_stack, "IF", &mut diagnostics, offset, self) {
+                            diagnostics.push(make_error(
+                                "ENDIF without matching IF",
+                                offset,
+                                token.len as usize,
+                                self,
+                            ));
+                        }
+                    }
+                    "ENDFOR" | "NEXT" => {
+                        if !close_block(&mut block_stack, "FOR", &mut diagnostics, offset, self) {
+                            diagnostics.push(make_error(
+                                "ENDFOR without matching FOR",
+                                offset,
+                                token.len as usize,
+                                self,
+                            ));
+                        }
+                    }
+                    "ENDDO" => {
+                        // Can close DO, DO WHILE, or WHILE
+                        let closed = close_block(&mut block_stack, "DO", &mut diagnostics, offset, self)
+                            || close_block(&mut block_stack, "DO_CASE", &mut diagnostics, offset, self)
+                            || close_block(&mut block_stack, "DO_WHILE", &mut diagnostics, offset, self)
+                            || close_block(&mut block_stack, "WHILE", &mut diagnostics, offset, self);
+                        if !closed {
+                            diagnostics.push(make_error(
+                                "ENDDO without matching DO/WHILE",
+                                offset,
+                                token.len as usize,
+                                self,
+                            ));
+                        }
+                    }
+                    "ENDWHILE" => {
+                        if !close_block(&mut block_stack, "WHILE", &mut diagnostics, offset, self) {
+                            diagnostics.push(make_error(
+                                "ENDWHILE without matching WHILE",
+                                offset,
+                                token.len as usize,
+                                self,
+                            ));
+                        }
+                    }
+                    "ENDSCAN" => {
+                        if !close_block(&mut block_stack, "SCAN", &mut diagnostics, offset, self) {
+                            diagnostics.push(make_error(
+                                "ENDSCAN without matching SCAN",
+                                offset,
+                                token.len as usize,
+                                self,
+                            ));
+                        }
+                    }
+                    "ENDCASE" => {
+                        if !close_block(&mut block_stack, "DO_CASE", &mut diagnostics, offset, self) {
+                            diagnostics.push(make_error(
+                                "ENDCASE without matching DO CASE",
+                                offset,
+                                token.len as usize,
+                                self,
+                            ));
+                        }
+                    }
+                    "ENDTRY" => {
+                        if !close_block(&mut block_stack, "TRY", &mut diagnostics, offset, self) {
+                            diagnostics.push(make_error(
+                                "ENDTRY without matching TRY",
+                                offset,
+                                token.len as usize,
+                                self,
+                            ));
+                        }
+                    }
+                    "ENDWITH" => {
+                        if !close_block(&mut block_stack, "WITH", &mut diagnostics, offset, self) {
+                            diagnostics.push(make_error(
+                                "ENDWITH without matching WITH",
+                                offset,
+                                token.len as usize,
+                                self,
+                            ));
+                        }
+                    }
+                    "ENDTEXT" => {
+                        if !close_block(&mut block_stack, "TEXT", &mut diagnostics, offset, self) {
+                            diagnostics.push(make_error(
+                                "ENDTEXT without matching TEXT",
+                                offset,
+                                token.len as usize,
+                                self,
+                            ));
+                        }
+                    }
+                    "ENDFUNC" => {
+                        if !close_block(&mut block_stack, "FUNCTION", &mut diagnostics, offset, self) {
+                            diagnostics.push(make_error(
+                                "ENDFUNC without matching FUNCTION",
+                                offset,
+                                token.len as usize,
+                                self,
+                            ));
+                        }
+                    }
+                    "ENDPROC" => {
+                        if !close_block(&mut block_stack, "PROCEDURE", &mut diagnostics, offset, self) {
+                            diagnostics.push(make_error(
+                                "ENDPROC without matching PROCEDURE",
+                                offset,
+                                token.len as usize,
+                                self,
+                            ));
+                        }
+                    }
+                    "ENDDEFINE" => {
+                        if !close_block(&mut block_stack, "DEFINE", &mut diagnostics, offset, self) {
+                            diagnostics.push(make_error(
+                                "ENDDEFINE without matching DEFINE CLASS",
+                                offset,
+                                token.len as usize,
+                                self,
+                            ));
+                        }
+                    }
+                    _ => {}
+                }
+            }
+
+            offset += token.len as usize;
+        }
+
+        // Report unclosed blocks
+        for (kind, _, pos) in block_stack {
+            let expected = match kind.as_str() {
+                "IF" => "ENDIF",
+                "FOR" => "ENDFOR",
+                "WHILE" => "ENDWHILE or ENDDO",
+                "DO" => "ENDDO",
+                "DO_CASE" => "ENDCASE",
+                "DO_WHILE" => "ENDDO",
+                "SCAN" => "ENDSCAN",
+                "TRY" => "ENDTRY",
+                "WITH" => "ENDWITH",
+                "TEXT" => "ENDTEXT",
+                "FUNCTION" => "ENDFUNC",
+                "PROCEDURE" => "ENDPROC",
+                "DEFINE" => "ENDDEFINE",
+                _ => "END",
+            };
+            diagnostics.push(Diagnostic {
+                range: Range::new(pos, pos),
+                severity: Some(DiagnosticSeverity::ERROR),
+                code: None,
+                code_description: None,
+                source: Some("vfp-lsp".to_string()),
+                message: format!("Unclosed {}. Expected {}", kind.replace('_', " "), expected),
+                related_information: None,
+                tags: None,
+                data: None,
+            });
+        }
+
+        diagnostics
+    }
+
+    /// Duplicate definition detection.
+    fn duplicate_diagnostics(&self) -> Vec<Diagnostic> {
+        use std::collections::HashMap;
+
+        let mut diagnostics = Vec::new();
+        // Map from name -> (kind, offset, position)
+        let mut definitions: HashMap<String, Vec<(String, usize, Position)>> = HashMap::new();
+        let mut offset = 0;
+        let mut i = 0;
+
+        while i < self.tokens.len() {
+            let token = &self.tokens[i];
+
+            if token.kind == TokenKind::Ident {
+                let text = &self.content[offset..offset + token.len as usize];
+                let upper = text.to_ascii_uppercase();
+
+                match upper.as_str() {
+                    "FUNCTION" | "PROCEDURE" => {
+                        // Next non-trivia token is the name
+                        let mut j = i + 1;
+                        let mut name_offset = offset + token.len as usize;
+
+                        while j < self.tokens.len() {
+                            let next = &self.tokens[j];
+                            if !next.kind.is_trivia() {
+                                if next.kind == TokenKind::Ident {
+                                    let name = &self.content
+                                        [name_offset..name_offset + next.len as usize];
+                                    let name_upper = name.to_ascii_uppercase();
+                                    let pos = self.offset_to_position(name_offset);
+                                    definitions
+                                        .entry(name_upper)
+                                        .or_default()
+                                        .push((upper.clone(), name_offset, pos));
+                                }
+                                break;
+                            }
+                            name_offset += next.len as usize;
+                            j += 1;
+                        }
+                    }
+                    "DEFINE" => {
+                        // Look for CLASS keyword then name
+                        let mut j = i + 1;
+                        let mut class_offset = offset + token.len as usize;
+
+                        while j < self.tokens.len() {
+                            let next = &self.tokens[j];
+                            if !next.kind.is_trivia() {
+                                let next_text =
+                                    &self.content[class_offset..class_offset + next.len as usize];
+                                if next_text.eq_ignore_ascii_case("CLASS") {
+                                    // Next token is the class name
+                                    let mut k = j + 1;
+                                    let mut name_offset = class_offset + next.len as usize;
+
+                                    while k < self.tokens.len() {
+                                        let name_token = &self.tokens[k];
+                                        if !name_token.kind.is_trivia() {
+                                            if name_token.kind == TokenKind::Ident {
+                                                let name = &self.content[name_offset
+                                                    ..name_offset + name_token.len as usize];
+                                                let name_upper = name.to_ascii_uppercase();
+                                                let pos = self.offset_to_position(name_offset);
+                                                definitions
+                                                    .entry(name_upper)
+                                                    .or_default()
+                                                    .push(("CLASS".to_string(), name_offset, pos));
+                                            }
+                                            break;
+                                        }
+                                        name_offset += name_token.len as usize;
+                                        k += 1;
+                                    }
+                                }
+                                break;
+                            }
+                            class_offset += next.len as usize;
+                            j += 1;
+                        }
+                    }
+                    _ => {}
+                }
+            }
+
+            offset += token.len as usize;
+            i += 1;
+        }
+
+        // Report duplicates
+        for (name, defs) in definitions {
+            if defs.len() > 1 {
+                for (kind, def_offset, pos) in &defs[1..] {
+                    let first_kind = &defs[0].0;
+                    let first_pos = &defs[0].2;
+                    let name_in_content =
+                        &self.content[*def_offset..*def_offset + name.len()];
+                    diagnostics.push(Diagnostic {
+                        range: Range::new(*pos, Position::new(pos.line, pos.character + name.len() as u32)),
+                        severity: Some(DiagnosticSeverity::ERROR),
+                        code: None,
+                        code_description: None,
+                        source: Some("vfp-lsp".to_string()),
+                        message: format!(
+                            "Duplicate {} '{}'. First defined as {} at line {}",
+                            kind, name_in_content, first_kind, first_pos.line + 1
+                        ),
+                        related_information: None,
+                        tags: None,
+                        data: None,
+                    });
+                }
+            }
+        }
+
         diagnostics
     }
 
@@ -282,8 +659,8 @@ impl Document {
         symbols
     }
 
-    /// Find the range of a keyword definition in the document
-    pub fn find_keyword_definition(&self, word: &str) -> Option<Range> {
+    /// Find definition of a symbol (FUNCTION, PROCEDURE, CLASS) by name
+    pub fn find_definition(&self, name: &str) -> Option<Range> {
         let mut offset = 0;
         let mut i = 0;
 
@@ -294,43 +671,74 @@ impl Document {
                 let text = &self.content[offset..offset + token.len as usize];
                 let upper = text.to_ascii_uppercase();
 
-                // Check if this is the keyword we're looking for
-                if text.eq_ignore_ascii_case(word) {
-                    match upper.as_str() {
-                        "FUNCTION" | "PROCEDURE" => {
-                            // Look ahead for the function/procedure name
-                            let mut j = i + 1;
-                            let mut name_offset = offset + token.len as usize;
+                match upper.as_str() {
+                    "FUNCTION" | "PROCEDURE" => {
+                        // Look ahead for the function/procedure name
+                        let mut j = i + 1;
+                        let mut name_offset = offset + token.len as usize;
 
-                            while j < self.tokens.len() {
-                                let next = &self.tokens[j];
-                                if !next.kind.is_trivia() {
-                                    if next.kind == TokenKind::Ident {
-                                        // Return the FUNCTION/PROCEDURE keyword itself
-                                        let start = self.offset_to_position(offset);
-                                        let end =
-                                            self.offset_to_position(offset + token.len as usize);
+                        while j < self.tokens.len() {
+                            let next = &self.tokens[j];
+                            if !next.kind.is_trivia() {
+                                if next.kind == TokenKind::Ident {
+                                    let func_name = &self.content
+                                        [name_offset..name_offset + next.len as usize];
+                                    if func_name.eq_ignore_ascii_case(name) {
+                                        let start = self.offset_to_position(name_offset);
+                                        let end = self
+                                            .offset_to_position(name_offset + next.len as usize);
                                         return Some(Range::new(start, end));
                                     }
-                                    break;
                                 }
-                                name_offset += next.len as usize;
-                                j += 1;
+                                break;
                             }
-                        }
-                        "SELECT" => {
-                            // For SELECT, return the SELECT keyword itself
-                            let start = self.offset_to_position(offset);
-                            let end = self.offset_to_position(offset + token.len as usize);
-                            return Some(Range::new(start, end));
-                        }
-                        _ => {
-                            // For other keywords, return their position
-                            let start = self.offset_to_position(offset);
-                            let end = self.offset_to_position(offset + token.len as usize);
-                            return Some(Range::new(start, end));
+                            name_offset += next.len as usize;
+                            j += 1;
                         }
                     }
+                    "DEFINE" => {
+                        // Look for CLASS keyword, then name
+                        let mut j = i + 1;
+                        let mut class_offset = offset + token.len as usize;
+
+                        while j < self.tokens.len() {
+                            let next = &self.tokens[j];
+                            if !next.kind.is_trivia() {
+                                let next_text =
+                                    &self.content[class_offset..class_offset + next.len as usize];
+                                if next_text.eq_ignore_ascii_case("CLASS") {
+                                    // Next token is the class name
+                                    let mut k = j + 1;
+                                    let mut name_offset = class_offset + next.len as usize;
+
+                                    while k < self.tokens.len() {
+                                        let name_token = &self.tokens[k];
+                                        if !name_token.kind.is_trivia() {
+                                            if name_token.kind == TokenKind::Ident {
+                                                let class_name = &self.content[name_offset
+                                                    ..name_offset + name_token.len as usize];
+                                                if class_name.eq_ignore_ascii_case(name) {
+                                                    let start =
+                                                        self.offset_to_position(name_offset);
+                                                    let end = self.offset_to_position(
+                                                        name_offset + name_token.len as usize,
+                                                    );
+                                                    return Some(Range::new(start, end));
+                                                }
+                                            }
+                                            break;
+                                        }
+                                        name_offset += name_token.len as usize;
+                                        k += 1;
+                                    }
+                                }
+                                break;
+                            }
+                            class_offset += next.len as usize;
+                            j += 1;
+                        }
+                    }
+                    _ => {}
                 }
             }
 
@@ -376,5 +784,154 @@ impl DocumentStore {
 impl Default for DocumentStore {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+/// All VFP and SQL keywords for fuzzy matching.
+const ALL_KEYWORDS: &[&str] = &[
+    // Control flow
+    "IF", "ELSE", "ELSEIF", "ENDIF", "DO", "WHILE", "ENDDO", "FOR", "ENDFOR", "NEXT",
+    "TO", "STEP", "SCAN", "ENDSCAN", "CASE", "OTHERWISE", "ENDCASE",
+    // Error handling
+    "TRY", "CATCH", "FINALLY", "ENDTRY", "THROW",
+    // Functions/procedures
+    "FUNCTION", "ENDFUNC", "PROCEDURE", "ENDPROC", "RETURN", "LPARAMETERS", "PARAMETERS",
+    // Variables
+    "LOCAL", "PRIVATE", "PUBLIC", "DIMENSION", "DECLARE",
+    // Classes
+    "DEFINE", "CLASS", "ENDDEFINE", "AS", "OF", "THIS", "THISFORM", "DODEFAULT", "NODEFAULT",
+    "PROTECTED", "HIDDEN",
+    // Loops
+    "EXIT", "LOOP", "WITH", "ENDWITH",
+    // Text
+    "TEXT", "ENDTEXT",
+    // Data
+    "USE", "CLOSE", "CLEAR", "RELEASE", "STORE", "CREATE", "ALTER", "DROP", "INDEX",
+    "APPEND", "REPLACE", "DELETE", "RECALL", "PACK", "ZAP", "LOCATE", "CONTINUE", "SEEK",
+    "GO", "GOTO", "SKIP", "SET", "BROWSE", "EDIT", "CHANGE",
+    // SQL
+    "SELECT", "FROM", "WHERE", "ORDER", "BY", "GROUP", "HAVING", "INTO", "CURSOR", "TABLE",
+    "INSERT", "UPDATE", "VALUES", "JOIN", "INNER", "LEFT", "RIGHT", "OUTER", "ON",
+    "DISTINCT", "TOP", "UNION", "ALL", "AND", "OR", "NOT", "LIKE", "BETWEEN", "IS", "NULL",
+    // I/O
+    "WAIT", "ACCEPT", "INPUT", "READ", "KEYBOARD",
+    // Reports
+    "REPORT", "FORM", "LABEL",
+    // Other
+    "COPY", "RENAME", "ERASE", "RUN", "QUIT", "CANCEL", "RETRY", "SUSPEND", "RESUME",
+    "DEBUGOUT", "ASSERT", "ERROR",
+];
+
+/// Levenshtein distance between two strings.
+fn levenshtein(a: &str, b: &str) -> usize {
+    let a_chars: Vec<char> = a.chars().collect();
+    let b_chars: Vec<char> = b.chars().collect();
+    let a_len = a_chars.len();
+    let b_len = b_chars.len();
+
+    if a_len == 0 {
+        return b_len;
+    }
+    if b_len == 0 {
+        return a_len;
+    }
+
+    let mut matrix = vec![vec![0usize; b_len + 1]; a_len + 1];
+
+    for i in 0..=a_len {
+        matrix[i][0] = i;
+    }
+    for j in 0..=b_len {
+        matrix[0][j] = j;
+    }
+
+    for i in 1..=a_len {
+        for j in 1..=b_len {
+            let cost = if a_chars[i - 1] == b_chars[j - 1] { 0 } else { 1 };
+            matrix[i][j] = (matrix[i - 1][j] + 1)
+                .min(matrix[i][j - 1] + 1)
+                .min(matrix[i - 1][j - 1] + cost);
+        }
+    }
+
+    matrix[a_len][b_len]
+}
+
+/// Find a similar keyword if the word looks like a typo.
+fn find_similar_keyword(word: &str) -> Option<&'static str> {
+    let word_len = word.len();
+
+    // Skip very short words (likely abbreviations or variables)
+    if word_len < 3 {
+        return None;
+    }
+
+    // Skip very long words (unlikely to be keyword typos)
+    if word_len > 12 {
+        return None;
+    }
+
+    let mut best_match: Option<&'static str> = None;
+    let mut best_distance = usize::MAX;
+
+    // Max allowed distance depends on word length
+    let max_distance = match word_len {
+        3..=4 => 1,
+        5..=7 => 2,
+        _ => 3,
+    };
+
+    for keyword in ALL_KEYWORDS {
+        let keyword_len = keyword.len();
+
+        // Skip if lengths are too different
+        if keyword_len.abs_diff(word_len) > max_distance {
+            continue;
+        }
+
+        let distance = levenshtein(word, keyword);
+
+        // Must be close but not exact (exact means it's a valid keyword)
+        if distance > 0 && distance <= max_distance && distance < best_distance {
+            best_distance = distance;
+            best_match = Some(keyword);
+        }
+    }
+
+    best_match
+}
+
+/// Try to close a block of the given type.
+fn close_block(
+    stack: &mut Vec<(String, usize, Position)>,
+    expected: &str,
+    _diagnostics: &mut Vec<Diagnostic>,
+    _offset: usize,
+    _doc: &Document,
+) -> bool {
+    // Find the most recent matching block
+    for i in (0..stack.len()).rev() {
+        if stack[i].0 == expected {
+            stack.remove(i);
+            return true;
+        }
+    }
+    false
+}
+
+/// Create an error diagnostic.
+fn make_error(message: &str, offset: usize, len: usize, doc: &Document) -> Diagnostic {
+    let start = doc.offset_to_position(offset);
+    let end = doc.offset_to_position(offset + len);
+    Diagnostic {
+        range: Range::new(start, end),
+        severity: Some(DiagnosticSeverity::ERROR),
+        code: None,
+        code_description: None,
+        source: Some("vfp-lsp".to_string()),
+        message: message.to_string(),
+        related_information: None,
+        tags: None,
+        data: None,
     }
 }

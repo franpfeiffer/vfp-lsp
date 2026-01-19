@@ -62,44 +62,6 @@ impl Backend {
         )
     }
 
-    fn get_builtin_definition(&self, word: &str) -> Option<(String, String)> {
-        match word {
-            "SELECT" => Some((
-                "SELECT [fields] FROM [table] WHERE [condition]".to_string(),
-                "SQL SELECT command - retrieves data from tables".to_string(),
-            )),
-            "FUNCTION" => Some((
-                "FUNCTION FunctionName([parameters]) AS ReturnType".to_string(),
-                "Defines a user-defined function".to_string(),
-            )),
-            "PROCEDURE" => Some((
-                "PROCEDURE ProcedureName([parameters])".to_string(),
-                "Defines a user-defined procedure".to_string(),
-            )),
-            "IF" => Some((
-                "IF [condition] [commands] ELSE [commands] ENDIF".to_string(),
-                "Conditional execution".to_string(),
-            )),
-            "FOR" => Some((
-                "FOR variable = start TO end [STEP increment] [commands] ENDFOR".to_string(),
-                "Loop with counter".to_string(),
-            )),
-            "WHILE" => Some((
-                "WHILE [condition] [commands] ENDWHILE".to_string(),
-                "Conditional loop".to_string(),
-            )),
-            "RETURN" => Some((
-                "RETURN [expression]".to_string(),
-                "Returns from function/procedure with optional value".to_string(),
-            )),
-            "DO" => Some((
-                "DO ProcedureName [WITH parameters]".to_string(),
-                "Calls a procedure".to_string(),
-            )),
-            _ => None,
-        }
-    }
-
     /// Publish diagnostics for a document.
     async fn publish_diagnostics(&self, uri: Url) {
         if let Some(doc) = self.documents.get(&uri) {
@@ -198,13 +160,10 @@ impl LanguageServer for Backend {
 
     async fn completion(&self, params: CompletionParams) -> Result<Option<CompletionResponse>> {
         let uri = &params.text_document_position.text_document.uri;
-        let position = params.text_document_position.position;
 
         let Some(doc) = self.documents.get(uri) else {
             return Ok(None);
         };
-
-        let offset = doc.position_to_offset(position);
 
         // Get context from trigger character
         let trigger = params
@@ -316,23 +275,18 @@ impl LanguageServer for Backend {
             return Ok(None);
         };
 
-        // Search for function/procedure/class definitions
-        let symbols = doc.symbols();
-        for symbol in symbols {
-            if symbol.name.eq_ignore_ascii_case(&word) {
-                return Ok(Some(GotoDefinitionResponse::Scalar(Location::new(
-                    uri.clone(),
-                    symbol.selection_range,
-                ))));
-            }
+        // Skip built-in keywords - hover shows their docs
+        let upper_word = word.to_ascii_uppercase();
+        if Self::is_builtin_keyword(&upper_word) {
+            return Ok(None);
         }
 
-        // Check if it's a built-in keyword and create a definition in the current document
-        let upper_word = word.to_ascii_uppercase();
-        if let Some((_definition_line, _description)) = self.get_builtin_definition(&upper_word) {
-            // For now, don't provide go-to-definition for built-in keywords
-            // The hover functionality already shows the documentation
-            return Ok(None);
+        // Search for function/procedure/class definitions using find_definition
+        if let Some(range) = doc.find_definition(&word) {
+            return Ok(Some(GotoDefinitionResponse::Scalar(Location::new(
+                uri.clone(),
+                range,
+            ))));
         }
 
         Ok(None)
