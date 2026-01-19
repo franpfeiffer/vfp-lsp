@@ -65,7 +65,7 @@ See [editors/neovim/README.md](editors/neovim/README.md) for detailed instructio
 Quick setup with lazy.nvim:
 ```lua
 {
-  dir = "/path/to/fxp-lsp/editors/neovim",
+  dir = "/path/to/vfp-lsp/editors/neovim",
   config = function()
     require("vfp-lsp").setup({
       cmd = "/path/to/target/release/vfp-lsp",
