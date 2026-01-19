@@ -60,6 +60,7 @@ pub enum TokenKind {
     Arrow,
     Pipe,
     Amp,
+    Question,
 
     TextMergeOpen,
     TextMergeClose,

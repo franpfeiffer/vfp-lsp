@@ -229,6 +229,10 @@ impl<'a> Cursor<'a> {
                 self.bump();
                 TokenKind::Pipe
             }
+            '?' => {
+                self.bump();
+                TokenKind::Question
+            }
 
             '(' => {
                 self.bump();

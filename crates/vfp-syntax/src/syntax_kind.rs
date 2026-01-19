@@ -151,6 +151,7 @@ pub enum SyntaxKind {
     BANG,
     AT,
     PIPE,
+    QUESTION,
     AMP,
 
     L_PAREN,
@@ -272,6 +273,7 @@ impl SyntaxKind {
             TokenKind::Bang => SyntaxKind::BANG,
             TokenKind::At => SyntaxKind::AT,
             TokenKind::Pipe => SyntaxKind::PIPE,
+            TokenKind::Question => SyntaxKind::QUESTION,
             TokenKind::Amp => SyntaxKind::AMP,
 
             TokenKind::LParen => SyntaxKind::L_PAREN,

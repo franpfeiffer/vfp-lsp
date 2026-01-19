@@ -186,8 +186,27 @@ impl Document {
         let mut diagnostics = Vec::new();
         let mut block_stack: Vec<(String, usize, Position)> = Vec::new();
         let mut offset = 0;
+        let mut in_text_merge = false;
 
         for token in &self.tokens {
+            // Track text merge regions - don't parse inside <<...>>
+            if token.kind == TokenKind::TextMergeOpen {
+                in_text_merge = true;
+                offset += token.len as usize;
+                continue;
+            }
+            if token.kind == TokenKind::TextMergeClose {
+                in_text_merge = false;
+                offset += token.len as usize;
+                continue;
+            }
+
+            // Skip parsing inside text merge expressions
+            if in_text_merge {
+                offset += token.len as usize;
+                continue;
+            }
+
             if token.kind == TokenKind::Ident {
                 let text = &self.content[offset..offset + token.len as usize];
                 let upper = text.to_ascii_uppercase();
@@ -198,23 +217,33 @@ impl Document {
                     "IF" => block_stack.push(("IF".to_string(), offset, pos)),
                     "FOR" => block_stack.push(("FOR".to_string(), offset, pos)),
                     "WHILE" => {
-                        // Check if previous token was DO
-                        if !block_stack.last().is_some_and(|(k, _, _)| k == "DO_WHILE") {
+                        // Check if previous was DO_TENTATIVE -> make it DO_WHILE
+                        if let Some((kind, _, _)) = block_stack.last_mut() {
+                            if kind == "DO_TENTATIVE" {
+                                *kind = "DO_WHILE".to_string();
+                            } else {
+                                // Standalone WHILE block
+                                block_stack.push(("WHILE".to_string(), offset, pos));
+                            }
+                        } else {
+                            // Standalone WHILE block
                             block_stack.push(("WHILE".to_string(), offset, pos));
                         }
                     }
                     "DO" => {
-                        // Look ahead to see if it's DO WHILE or DO CASE
-                        block_stack.push(("DO".to_string(), offset, pos));
+                        // DO is only a block if followed by WHILE or CASE
+                        // DO procedure calls are not blocks
+                        // We'll mark it tentatively and remove if not followed by WHILE/CASE
+                        block_stack.push(("DO_TENTATIVE".to_string(), offset, pos));
                     }
                     "SCAN" => block_stack.push(("SCAN".to_string(), offset, pos)),
                     "TRY" => block_stack.push(("TRY".to_string(), offset, pos)),
                     "WITH" => block_stack.push(("WITH".to_string(), offset, pos)),
                     "TEXT" => block_stack.push(("TEXT".to_string(), offset, pos)),
                     "CASE" => {
-                        // If previous was DO, convert to DO_CASE
+                        // If previous was DO_TENTATIVE, convert to DO_CASE
                         if let Some((kind, _, _)) = block_stack.last_mut() {
-                            if kind == "DO" {
+                            if kind == "DO_TENTATIVE" {
                                 *kind = "DO_CASE".to_string();
                             }
                         }
@@ -245,14 +274,12 @@ impl Document {
                         }
                     }
                     "ENDDO" => {
-                        // Can close DO, DO WHILE, or WHILE
-                        let closed = close_block(&mut block_stack, "DO", &mut diagnostics, offset, self)
-                            || close_block(&mut block_stack, "DO_CASE", &mut diagnostics, offset, self)
-                            || close_block(&mut block_stack, "DO_WHILE", &mut diagnostics, offset, self)
+                        // Can close DO_WHILE or WHILE (not DO_TENTATIVE - those are procedure calls)
+                        let closed = close_block(&mut block_stack, "DO_WHILE", &mut diagnostics, offset, self)
                             || close_block(&mut block_stack, "WHILE", &mut diagnostics, offset, self);
                         if !closed {
                             diagnostics.push(make_error(
-                                "ENDDO without matching DO/WHILE",
+                                "ENDDO without matching DO WHILE/WHILE",
                                 offset,
                                 token.len as usize,
                                 self,
@@ -356,13 +383,17 @@ impl Document {
             offset += token.len as usize;
         }
 
-        // Report unclosed blocks
+        // Report unclosed blocks (skip DO_TENTATIVE - those are procedure calls)
         for (kind, _, pos) in block_stack {
+            // Skip tentative DO - it's a procedure call, not a block
+            if kind == "DO_TENTATIVE" {
+                continue;
+            }
+
             let expected = match kind.as_str() {
                 "IF" => "ENDIF",
                 "FOR" => "ENDFOR",
                 "WHILE" => "ENDWHILE or ENDDO",
-                "DO" => "ENDDO",
                 "DO_CASE" => "ENDCASE",
                 "DO_WHILE" => "ENDDO",
                 "SCAN" => "ENDSCAN",
@@ -372,7 +403,7 @@ impl Document {
                 "FUNCTION" => "ENDFUNC",
                 "PROCEDURE" => "ENDPROC",
                 "DEFINE" => "ENDDEFINE",
-                _ => "END",
+                _ => continue, // Skip unknown block types
             };
             diagnostics.push(Diagnostic {
                 range: Range::new(pos, pos),
@@ -787,118 +818,10 @@ impl Default for DocumentStore {
     }
 }
 
-/// All VFP and SQL keywords for fuzzy matching.
-const ALL_KEYWORDS: &[&str] = &[
-    // Control flow
-    "IF", "ELSE", "ELSEIF", "ENDIF", "DO", "WHILE", "ENDDO", "FOR", "ENDFOR", "NEXT",
-    "TO", "STEP", "SCAN", "ENDSCAN", "CASE", "OTHERWISE", "ENDCASE",
-    // Error handling
-    "TRY", "CATCH", "FINALLY", "ENDTRY", "THROW",
-    // Functions/procedures
-    "FUNCTION", "ENDFUNC", "PROCEDURE", "ENDPROC", "RETURN", "LPARAMETERS", "PARAMETERS",
-    // Variables
-    "LOCAL", "PRIVATE", "PUBLIC", "DIMENSION", "DECLARE",
-    // Classes
-    "DEFINE", "CLASS", "ENDDEFINE", "AS", "OF", "THIS", "THISFORM", "DODEFAULT", "NODEFAULT",
-    "PROTECTED", "HIDDEN",
-    // Loops
-    "EXIT", "LOOP", "WITH", "ENDWITH",
-    // Text
-    "TEXT", "ENDTEXT",
-    // Data
-    "USE", "CLOSE", "CLEAR", "RELEASE", "STORE", "CREATE", "ALTER", "DROP", "INDEX",
-    "APPEND", "REPLACE", "DELETE", "RECALL", "PACK", "ZAP", "LOCATE", "CONTINUE", "SEEK",
-    "GO", "GOTO", "SKIP", "SET", "BROWSE", "EDIT", "CHANGE",
-    // SQL
-    "SELECT", "FROM", "WHERE", "ORDER", "BY", "GROUP", "HAVING", "INTO", "CURSOR", "TABLE",
-    "INSERT", "UPDATE", "VALUES", "JOIN", "INNER", "LEFT", "RIGHT", "OUTER", "ON",
-    "DISTINCT", "TOP", "UNION", "ALL", "AND", "OR", "NOT", "LIKE", "BETWEEN", "IS", "NULL",
-    // I/O
-    "WAIT", "ACCEPT", "INPUT", "READ", "KEYBOARD",
-    // Reports
-    "REPORT", "FORM", "LABEL",
-    // Other
-    "COPY", "RENAME", "ERASE", "RUN", "QUIT", "CANCEL", "RETRY", "SUSPEND", "RESUME",
-    "DEBUGOUT", "ASSERT", "ERROR",
-];
-
-/// Levenshtein distance between two strings.
-fn levenshtein(a: &str, b: &str) -> usize {
-    let a_chars: Vec<char> = a.chars().collect();
-    let b_chars: Vec<char> = b.chars().collect();
-    let a_len = a_chars.len();
-    let b_len = b_chars.len();
-
-    if a_len == 0 {
-        return b_len;
-    }
-    if b_len == 0 {
-        return a_len;
-    }
-
-    let mut matrix = vec![vec![0usize; b_len + 1]; a_len + 1];
-
-    for i in 0..=a_len {
-        matrix[i][0] = i;
-    }
-    for j in 0..=b_len {
-        matrix[0][j] = j;
-    }
-
-    for i in 1..=a_len {
-        for j in 1..=b_len {
-            let cost = if a_chars[i - 1] == b_chars[j - 1] { 0 } else { 1 };
-            matrix[i][j] = (matrix[i - 1][j] + 1)
-                .min(matrix[i][j - 1] + 1)
-                .min(matrix[i - 1][j - 1] + cost);
-        }
-    }
-
-    matrix[a_len][b_len]
-}
-
 /// Find a similar keyword if the word looks like a typo.
-fn find_similar_keyword(word: &str) -> Option<&'static str> {
-    let word_len = word.len();
-
-    // Skip very short words (likely abbreviations or variables)
-    if word_len < 3 {
-        return None;
-    }
-
-    // Skip very long words (unlikely to be keyword typos)
-    if word_len > 12 {
-        return None;
-    }
-
-    let mut best_match: Option<&'static str> = None;
-    let mut best_distance = usize::MAX;
-
-    // Max allowed distance depends on word length
-    let max_distance = match word_len {
-        3..=4 => 1,
-        5..=7 => 2,
-        _ => 3,
-    };
-
-    for keyword in ALL_KEYWORDS {
-        let keyword_len = keyword.len();
-
-        // Skip if lengths are too different
-        if keyword_len.abs_diff(word_len) > max_distance {
-            continue;
-        }
-
-        let distance = levenshtein(word, keyword);
-
-        // Must be close but not exact (exact means it's a valid keyword)
-        if distance > 0 && distance <= max_distance && distance < best_distance {
-            best_distance = distance;
-            best_match = Some(keyword);
-        }
-    }
-
-    best_match
+/// Currently disabled - too many false positives with VFP naming conventions.
+fn find_similar_keyword(_word: &str) -> Option<&'static str> {
+    None
 }
 
 /// Try to close a block of the given type.
