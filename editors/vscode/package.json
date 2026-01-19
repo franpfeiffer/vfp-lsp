@@ -1,0 +1,104 @@
+{
+  "name": "vfp-lsp",
+  "displayName": "Visual FoxPro",
+  "description": "Language support for Visual FoxPro",
+  "version": "0.1.0",
+  "publisher": "vfp-lsp",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/yourusername/fxp-lsp"
+  },
+  "engines": {
+    "vscode": "^1.75.0"
+  },
+  "categories": [
+    "Programming Languages"
+  ],
+  "activationEvents": [
+    "onLanguage:vfp"
+  ],
+  "main": "./out/extension.js",
+  "contributes": {
+    "languages": [
+      {
+        "id": "vfp",
+        "aliases": [
+          "Visual FoxPro",
+          "VFP",
+          "FoxPro"
+        ],
+        "extensions": [
+          ".prg",
+          ".fxp",
+          ".spr",
+          ".mpr",
+          ".qpr",
+          ".vcx",
+          ".vct",
+          ".scx",
+          ".sct",
+          ".frx",
+          ".frt",
+          ".lbx",
+          ".lbt",
+          ".mnx",
+          ".mnt",
+          ".dbc",
+          ".dbf"
+        ],
+        "configuration": "./language-configuration.json"
+      }
+    ],
+    "grammars": [
+      {
+        "language": "vfp",
+        "scopeName": "source.vfp",
+        "path": "./syntaxes/vfp.tmLanguage.json"
+      }
+    ],
+    "configuration": {
+      "title": "Visual FoxPro",
+      "properties": {
+        "vfp.server.path": {
+          "type": "string",
+          "default": "",
+          "description": "Path to the vfp-lsp server executable. If empty, will look for 'vfp-lsp' in PATH."
+        },
+        "vfp.trace.server": {
+          "type": "string",
+          "enum": [
+            "off",
+            "messages",
+            "verbose"
+          ],
+          "default": "off",
+          "description": "Traces the communication between VS Code and the VFP language server."
+        }
+      }
+    },
+    "commands": [
+      {
+        "command": "vfp.restartServer",
+        "title": "VFP: Restart Language Server"
+      }
+    ]
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run compile",
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./",
+    "lint": "eslint src --ext ts"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "@types/vscode": "^1.75.0",
+    "@typescript-eslint/eslint-plugin": "^6.0.0",
+    "@typescript-eslint/parser": "^6.0.0",
+    "eslint": "^8.0.0",
+    "typescript": "^5.0.0"
+  },
+  "dependencies": {
+    "vscode-languageclient": "^9.0.0"
+  }
+}

@@ -1,0 +1,11 @@
+[package]
+name = "vfp-lexer"
+description = "Low-level lexer for Visual FoxPro"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+
+[dev-dependencies]
+expect-test = "1.5"

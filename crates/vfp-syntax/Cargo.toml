@@ -1,0 +1,11 @@
+[package]
+name = "vfp-syntax"
+description = "Syntax tree library for Visual FoxPro"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+vfp-lexer = { workspace = true }
+rowan = { workspace = true }
+smol_str = { workspace = true }

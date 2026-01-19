@@ -1,0 +1,176 @@
+{
+  "$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
+  "name": "Visual FoxPro",
+  "scopeName": "source.vfp",
+  "patterns": [
+    { "include": "#comments" },
+    { "include": "#preprocessor" },
+    { "include": "#strings" },
+    { "include": "#numbers" },
+    { "include": "#constants" },
+    { "include": "#keywords" },
+    { "include": "#sql" },
+    { "include": "#operators" },
+    { "include": "#functions" }
+  ],
+  "repository": {
+    "comments": {
+      "patterns": [
+        {
+          "name": "comment.line.asterisk.vfp",
+          "match": "^\\s*\\*.*$"
+        },
+        {
+          "name": "comment.line.ampersand.vfp",
+          "match": "&&.*$"
+        },
+        {
+          "name": "comment.line.note.vfp",
+          "match": "(?i)^\\s*NOTE\\s+.*$"
+        }
+      ]
+    },
+    "preprocessor": {
+      "patterns": [
+        {
+          "name": "meta.preprocessor.vfp",
+          "match": "(?i)^\\s*(#DEFINE|#DEF|#UNDEF|#IF|#IFDEF|#IFNDEF|#ELSE|#ELIF|#ENDIF|#INCLUDE)\\b",
+          "captures": {
+            "1": { "name": "keyword.control.preprocessor.vfp" }
+          }
+        }
+      ]
+    },
+    "strings": {
+      "patterns": [
+        {
+          "name": "string.quoted.double.vfp",
+          "begin": "\"",
+          "end": "\"",
+          "patterns": [
+            {
+              "name": "constant.character.escape.vfp",
+              "match": "\\\\."
+            }
+          ]
+        },
+        {
+          "name": "string.quoted.single.vfp",
+          "begin": "'",
+          "end": "'",
+          "patterns": [
+            {
+              "name": "constant.character.escape.vfp",
+              "match": "\\\\."
+            }
+          ]
+        },
+        {
+          "name": "string.quoted.bracket.vfp",
+          "begin": "\\[",
+          "end": "\\]"
+        }
+      ]
+    },
+    "numbers": {
+      "patterns": [
+        {
+          "name": "constant.numeric.hex.vfp",
+          "match": "\\b0[xXhH][0-9a-fA-F]+\\b"
+        },
+        {
+          "name": "constant.numeric.float.vfp",
+          "match": "\\b[0-9]+\\.[0-9]+([eE][+-]?[0-9]+)?\\b"
+        },
+        {
+          "name": "constant.numeric.integer.vfp",
+          "match": "\\b[0-9]+\\b"
+        }
+      ]
+    },
+    "constants": {
+      "patterns": [
+        {
+          "name": "constant.language.boolean.true.vfp",
+          "match": "(?i)\\.T\\.|\\.TRUE\\."
+        },
+        {
+          "name": "constant.language.boolean.false.vfp",
+          "match": "(?i)\\.F\\.|\\.FALSE\\."
+        },
+        {
+          "name": "constant.language.null.vfp",
+          "match": "(?i)\\.NULL\\."
+        },
+        {
+          "name": "constant.other.date.vfp",
+          "match": "\\{\\^[^}]+\\}"
+        }
+      ]
+    },
+    "keywords": {
+      "patterns": [
+        {
+          "name": "keyword.control.vfp",
+          "match": "(?i)\\b(IF|ELSE|ELSEIF|ENDIF|DO|WHILE|ENDDO|FOR|EACH|ENDFOR|NEXT|TO|STEP|IN|CASE|OTHERWISE|ENDCASE|SCAN|ENDSCAN|EXIT|LOOP|RETURN|TRY|CATCH|FINALLY|ENDTRY|THROW|THEN)\\b"
+        },
+        {
+          "name": "keyword.other.function.vfp",
+          "match": "(?i)\\b(FUNCTION|ENDFUNC|PROCEDURE|ENDPROC|LPARAMETERS|PARAMETERS)\\b"
+        },
+        {
+          "name": "keyword.other.class.vfp",
+          "match": "(?i)\\b(DEFINE|CLASS|ENDDEFINE|AS|OF|OLEPUBLIC|PROTECTED|HIDDEN)\\b"
+        },
+        {
+          "name": "keyword.other.variable.vfp",
+          "match": "(?i)\\b(LOCAL|PRIVATE|PUBLIC|DIMENSION|DECLARE|EXTERNAL)\\b"
+        },
+        {
+          "name": "keyword.other.vfp",
+          "match": "(?i)\\b(WITH|ENDWITH|TEXT|ENDTEXT|USE|ALIAS|CLOSE|CLEAR|RELEASE|STORE|NOVALIDATE|EXCLUSIVE|SHARED|INDEX|TAG)\\b"
+        },
+        {
+          "name": "variable.language.this.vfp",
+          "match": "(?i)\\b(THIS|THISFORM|THISFORMSET|DODEFAULT|NODEFAULT)\\b"
+        }
+      ]
+    },
+    "sql": {
+      "patterns": [
+        {
+          "name": "keyword.other.sql.vfp",
+          "match": "(?i)\\b(SELECT|FROM|WHERE|ORDER|BY|GROUP|HAVING|INTO|CURSOR|TABLE|ARRAY|INSERT|UPDATE|DELETE|SET|VALUES|JOIN|INNER|LEFT|RIGHT|OUTER|FULL|CROSS|ON|DISTINCT|TOP|UNION|ALL|AND|OR|NOT|LIKE|BETWEEN|IS|NULL|ASC|DESC|CREATE|ALTER|DROP|ADD|COLUMN|NOFILTER|READWRITE)\\b"
+        }
+      ]
+    },
+    "operators": {
+      "patterns": [
+        {
+          "name": "keyword.operator.logical.vfp",
+          "match": "(?i)\\.AND\\.|\\.OR\\.|\\.NOT\\."
+        },
+        {
+          "name": "keyword.operator.comparison.vfp",
+          "match": "==|!=|<>|<=|>=|<|>|="
+        },
+        {
+          "name": "keyword.operator.arithmetic.vfp",
+          "match": "\\+|-|\\*|/|%|\\^|\\*\\*"
+        },
+        {
+          "name": "keyword.operator.string.vfp",
+          "match": "\\$"
+        }
+      ]
+    },
+    "functions": {
+      "patterns": [
+        {
+          "name": "support.function.builtin.vfp",
+          "match": "(?i)\\b(ABS|ACLASS|ACOPY|ADIR|AELEMENT|AFIELDS|ALEN|ALIAS|ALLTRIM|ASC|AT|BETWEEN|BOF|CDOW|CHR|CMONTH|CREATEOBJECT|CTOD|DATE|DATETIME|DAY|DELETED|DTOC|DTOS|EMPTY|EOF|EVALUATE|FILE|FOUND|GETENV|GOMONTH|IIF|INLIST|INT|ISDIGIT|ISNULL|LEFT|LEN|LOWER|LTRIM|MAX|MESSAGEBOX|MIN|MOD|MONTH|NVL|PADL|PADR|PROPER|RAT|RECCOUNT|RECNO|REPLICATE|RIGHT|ROUND|RTRIM|SECONDS|SEEK|SELECT|SPACE|SQRT|STR|STRTOFILE|STUFF|SUBSTR|SYS|TIME|TRANSFORM|TRIM|TYPE|UPPER|USED|VAL|VARTYPE|VERSION|YEAR)\\s*\\("
+        }
+      ]
+    }
+  }
+}

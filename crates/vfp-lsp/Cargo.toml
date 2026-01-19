@@ -1,0 +1,21 @@
+[package]
+name = "vfp-lsp"
+description = "Language Server Protocol implementation for Visual FoxPro"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "vfp-lsp"
+path = "src/main.rs"
+
+[dependencies]
+vfp-lexer = { workspace = true }
+vfp-syntax = { workspace = true }
+tower-lsp = { workspace = true }
+tokio = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+dashmap = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
