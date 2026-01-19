@@ -8,7 +8,7 @@ This directory contains Neovim configuration for the Visual FoxPro Language Serv
 
 ```lua
 {
-  "yourusername/fxp-lsp",
+  "franpfeiffer/fxp-lsp",
   config = function()
     require("vfp-lsp").setup({
       -- Optional: specify path to vfp-lsp if not in PATH
@@ -23,7 +23,7 @@ This directory contains Neovim configuration for the Visual FoxPro Language Serv
 
 ```lua
 use {
-  "yourusername/fxp-lsp",
+  "franpfeiffer/fxp-lsp",
   config = function()
     require("vfp-lsp").setup()
   end,
