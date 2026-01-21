@@ -1,7 +1,6 @@
 " Vim syntax file
 " Language: Visual FoxPro
-" Maintainer: VFP-LSP Team
-" Latest Revision: 2024
+" Maintainer: El Franchu
 
 if exists("b:current_syntax")
   finish
