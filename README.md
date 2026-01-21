@@ -73,7 +73,7 @@ cargo test
    ```bash
    cd editors/vscode
    npm install
-   npm run compile
+   vsce package
    ```
 4. Press F5 to launch a new VS Code window with the extension loaded
 
