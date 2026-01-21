@@ -116,37 +116,6 @@ require("vfp-lsp").setup({
 })
 ```
 
-## Development
-
-See [DEVELOPING.md](DEVELOPING.md) for detailed development instructions.
-
-### Quick Start
-
-```bash
-# Build
-cargo build
-
-# Test
-cargo test
-
-# Format code
-cargo fmt
-
-# Lint
-cargo clippy
-```
-
-### Line Endings
-
-This project uses Unix-style (LF) line endings. If you get formatting errors on Windows:
-
-```bash
-git config core.autocrlf input
-git add --renormalize .
-```
-
-See [DEVELOPING.md](DEVELOPING.md) for more details.
-
 ## License
 
 MIT
