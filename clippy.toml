@@ -1,0 +1,11 @@
+# Clippy configuration for VFP-LSP
+# See https://doc.rust-lang.org/clippy/
+
+# Deny common issues
+msrv = "1.70"
+
+# Allow certain lints that are too restrictive for this project
+# (uncomment as needed)
+# allow = [
+#     "clippy::too_many_arguments",
+# ]

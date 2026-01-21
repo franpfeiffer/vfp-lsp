@@ -1,6 +1,10 @@
 # VFP-LSP
 
-A Language Server Protocol (LSP) implementation for Visual FoxPro.
+[![CI](https://github.com/franpfeiffer/vfp-lsp/workflows/CI/badge.svg)](https://github.com/franpfeiffer/vfp-lsp/actions)
+[![Release](https://github.com/franpfeiffer/vfp-lsp/workflows/Release/badge.svg)](https://github.com/franpfeiffer/vfp-lsp/releases)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+
+A modern Language Server Protocol (LSP) implementation for Visual FoxPro, bringing contemporary IDE features to VFP development.
 
 ## Features
 
@@ -23,22 +27,38 @@ A Language Server Protocol (LSP) implementation for Visual FoxPro.
 - Date/DateTime literals
 - All VFP operators including `.AND.`, `.OR.`, `.NOT.`
 
-## Building
+## Installation
 
-### Prerequisites
+### Pre-built Binaries
+
+Download the latest release for your platform from [GitHub Releases](https://github.com/franpfeiffer/vfp-lsp/releases):
+
+- **Linux (x64)**: `vfp-lsp-linux-x64`
+- **Linux (ARM64)**: `vfp-lsp-linux-arm64`
+- **macOS (x64)**: `vfp-lsp-macos-x64`
+- **macOS (ARM64)**: `vfp-lsp-macos-arm64`
+- **Windows (x64)**: `vfp-lsp-windows-x64.exe`
+
+After downloading:
+1. Make it executable (Linux/macOS): `chmod +x vfp-lsp-*`
+2. Add to your PATH or configure editor to use the full path
+
+### Building from Source
+
+#### Prerequisites
 
 - Rust 1.70 or later
 - Node.js 18+ (for VS Code extension)
 
-### Build the LSP Server
+#### Build the LSP Server
 
 ```bash
-cargo build --release -p vfp-lsp
+cargo build --release
 ```
 
 The binary will be at `target/release/vfp-lsp`.
 
-### Run Tests
+#### Run Tests
 
 ```bash
 cargo test

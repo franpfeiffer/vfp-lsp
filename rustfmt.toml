@@ -1,0 +1,19 @@
+# Rustfmt configuration for VFP-LSP
+# See https://rust-lang.github.io/rustfmt/
+
+edition = "2024"
+max_width = 100
+hard_tabs = false
+tab_spaces = 4
+
+# Consistency
+newline_style = "Unix"
+use_field_init_shorthand = true
+use_try_shorthand = true
+
+# Formatting
+reorder_imports = true
+reorder_modules = true
+
+# Note: Some advanced formatting options require nightly Rust
+# To use them: rustup default nightly && cargo +nightly fmt

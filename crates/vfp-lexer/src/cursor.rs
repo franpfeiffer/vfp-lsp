@@ -345,12 +345,6 @@ impl<'a> Cursor<'a> {
                     terminated = true;
                     break;
                 }
-                '\\' => {
-                    self.bump();
-                    if !self.is_eof() {
-                        self.bump();
-                    }
-                }
                 '\n' | '\r' => break,
                 _ => {
                     self.bump();
@@ -373,12 +367,6 @@ impl<'a> Cursor<'a> {
                     self.bump();
                     terminated = true;
                     break;
-                }
-                '\\' => {
-                    self.bump();
-                    if !self.is_eof() {
-                        self.bump();
-                    }
                 }
                 '\n' | '\r' => break,
                 _ => {

@@ -187,8 +187,42 @@ impl Document {
         let mut block_stack: Vec<(String, usize, Position)> = Vec::new();
         let mut offset = 0;
         let mut in_text_merge = false;
+        let mut in_preprocessor_line = false;
+        let mut in_text_block = false;
 
         for token in &self.tokens {
+            // Skip comments entirely - they can contain words like "for" or "if"
+            if token.kind.is_comment() {
+                offset += token.len as usize;
+                continue;
+            }
+
+            // Skip string literals - they can contain keywords too
+            if matches!(token.kind, TokenKind::Literal { .. }) {
+                offset += token.len as usize;
+                continue;
+            }
+
+            // Track preprocessor directives - don't parse keywords inside them
+            if token.kind.is_preprocessor() {
+                in_preprocessor_line = true;
+                offset += token.len as usize;
+                continue;
+            }
+
+            // End of preprocessor line
+            if in_preprocessor_line && token.kind == TokenKind::Newline {
+                in_preprocessor_line = false;
+                offset += token.len as usize;
+                continue;
+            }
+
+            // Skip parsing inside preprocessor directives
+            if in_preprocessor_line {
+                offset += token.len as usize;
+                continue;
+            }
+
             // Track text merge regions - don't parse inside <<...>>
             if token.kind == TokenKind::TextMergeOpen {
                 in_text_merge = true;
@@ -211,6 +245,35 @@ impl Document {
                 let text = &self.content[offset..offset + token.len as usize];
                 let upper = text.to_ascii_uppercase();
                 let pos = self.offset_to_position(offset);
+
+                // Check for TEXT block start/end
+                if upper == "TEXT" && !in_text_block {
+                    block_stack.push(("TEXT".to_string(), offset, pos));
+                    in_text_block = true;
+                    offset += token.len as usize;
+                    continue;
+                }
+
+                if upper == "ENDTEXT" && in_text_block {
+                    if close_block(&mut block_stack, "TEXT", &mut diagnostics, offset, self) {
+                        in_text_block = false;
+                    } else {
+                        diagnostics.push(make_error(
+                            "ENDTEXT without matching TEXT",
+                            offset,
+                            token.len as usize,
+                            self,
+                        ));
+                    }
+                    offset += token.len as usize;
+                    continue;
+                }
+
+                // Skip parsing keywords inside TEXT blocks
+                if in_text_block {
+                    offset += token.len as usize;
+                    continue;
+                }
 
                 match upper.as_str() {
                     // Block openers
@@ -239,7 +302,6 @@ impl Document {
                     "SCAN" => block_stack.push(("SCAN".to_string(), offset, pos)),
                     "TRY" => block_stack.push(("TRY".to_string(), offset, pos)),
                     "WITH" => block_stack.push(("WITH".to_string(), offset, pos)),
-                    "TEXT" => block_stack.push(("TEXT".to_string(), offset, pos)),
                     "CASE" => {
                         // If previous was DO_TENTATIVE, convert to DO_CASE
                         if let Some((kind, _, _)) = block_stack.last_mut() {
@@ -275,8 +337,19 @@ impl Document {
                     }
                     "ENDDO" => {
                         // Can close DO_WHILE or WHILE (not DO_TENTATIVE - those are procedure calls)
-                        let closed = close_block(&mut block_stack, "DO_WHILE", &mut diagnostics, offset, self)
-                            || close_block(&mut block_stack, "WHILE", &mut diagnostics, offset, self);
+                        let closed = close_block(
+                            &mut block_stack,
+                            "DO_WHILE",
+                            &mut diagnostics,
+                            offset,
+                            self,
+                        ) || close_block(
+                            &mut block_stack,
+                            "WHILE",
+                            &mut diagnostics,
+                            offset,
+                            self,
+                        );
                         if !closed {
                             diagnostics.push(make_error(
                                 "ENDDO without matching DO WHILE/WHILE",
@@ -307,7 +380,8 @@ impl Document {
                         }
                     }
                     "ENDCASE" => {
-                        if !close_block(&mut block_stack, "DO_CASE", &mut diagnostics, offset, self) {
+                        if !close_block(&mut block_stack, "DO_CASE", &mut diagnostics, offset, self)
+                        {
                             diagnostics.push(make_error(
                                 "ENDCASE without matching DO CASE",
                                 offset,
@@ -336,18 +410,14 @@ impl Document {
                             ));
                         }
                     }
-                    "ENDTEXT" => {
-                        if !close_block(&mut block_stack, "TEXT", &mut diagnostics, offset, self) {
-                            diagnostics.push(make_error(
-                                "ENDTEXT without matching TEXT",
-                                offset,
-                                token.len as usize,
-                                self,
-                            ));
-                        }
-                    }
                     "ENDFUNC" => {
-                        if !close_block(&mut block_stack, "FUNCTION", &mut diagnostics, offset, self) {
+                        if !close_block(
+                            &mut block_stack,
+                            "FUNCTION",
+                            &mut diagnostics,
+                            offset,
+                            self,
+                        ) {
                             diagnostics.push(make_error(
                                 "ENDFUNC without matching FUNCTION",
                                 offset,
@@ -357,7 +427,13 @@ impl Document {
                         }
                     }
                     "ENDPROC" => {
-                        if !close_block(&mut block_stack, "PROCEDURE", &mut diagnostics, offset, self) {
+                        if !close_block(
+                            &mut block_stack,
+                            "PROCEDURE",
+                            &mut diagnostics,
+                            offset,
+                            self,
+                        ) {
                             diagnostics.push(make_error(
                                 "ENDPROC without matching PROCEDURE",
                                 offset,
@@ -367,7 +443,8 @@ impl Document {
                         }
                     }
                     "ENDDEFINE" => {
-                        if !close_block(&mut block_stack, "DEFINE", &mut diagnostics, offset, self) {
+                        if !close_block(&mut block_stack, "DEFINE", &mut diagnostics, offset, self)
+                        {
                             diagnostics.push(make_error(
                                 "ENDDEFINE without matching DEFINE CLASS",
                                 offset,
@@ -448,14 +525,15 @@ impl Document {
                             let next = &self.tokens[j];
                             if !next.kind.is_trivia() {
                                 if next.kind == TokenKind::Ident {
-                                    let name = &self.content
-                                        [name_offset..name_offset + next.len as usize];
+                                    let name =
+                                        &self.content[name_offset..name_offset + next.len as usize];
                                     let name_upper = name.to_ascii_uppercase();
                                     let pos = self.offset_to_position(name_offset);
-                                    definitions
-                                        .entry(name_upper)
-                                        .or_default()
-                                        .push((upper.clone(), name_offset, pos));
+                                    definitions.entry(name_upper).or_default().push((
+                                        upper.clone(),
+                                        name_offset,
+                                        pos,
+                                    ));
                                 }
                                 break;
                             }
@@ -486,10 +564,11 @@ impl Document {
                                                     ..name_offset + name_token.len as usize];
                                                 let name_upper = name.to_ascii_uppercase();
                                                 let pos = self.offset_to_position(name_offset);
-                                                definitions
-                                                    .entry(name_upper)
-                                                    .or_default()
-                                                    .push(("CLASS".to_string(), name_offset, pos));
+                                                definitions.entry(name_upper).or_default().push((
+                                                    "CLASS".to_string(),
+                                                    name_offset,
+                                                    pos,
+                                                ));
                                             }
                                             break;
                                         }
@@ -517,17 +596,22 @@ impl Document {
                 for (kind, def_offset, pos) in &defs[1..] {
                     let first_kind = &defs[0].0;
                     let first_pos = &defs[0].2;
-                    let name_in_content =
-                        &self.content[*def_offset..*def_offset + name.len()];
+                    let name_in_content = &self.content[*def_offset..*def_offset + name.len()];
                     diagnostics.push(Diagnostic {
-                        range: Range::new(*pos, Position::new(pos.line, pos.character + name.len() as u32)),
+                        range: Range::new(
+                            *pos,
+                            Position::new(pos.line, pos.character + name.len() as u32),
+                        ),
                         severity: Some(DiagnosticSeverity::ERROR),
                         code: None,
                         code_description: None,
                         source: Some("vfp-lsp".to_string()),
                         message: format!(
                             "Duplicate {} '{}'. First defined as {} at line {}",
-                            kind, name_in_content, first_kind, first_pos.line + 1
+                            kind,
+                            name_in_content,
+                            first_kind,
+                            first_pos.line + 1
                         ),
                         related_information: None,
                         tags: None,
@@ -712,8 +796,8 @@ impl Document {
                             let next = &self.tokens[j];
                             if !next.kind.is_trivia() {
                                 if next.kind == TokenKind::Ident {
-                                    let func_name = &self.content
-                                        [name_offset..name_offset + next.len as usize];
+                                    let func_name =
+                                        &self.content[name_offset..name_offset + next.len as usize];
                                     if func_name.eq_ignore_ascii_case(name) {
                                         let start = self.offset_to_position(name_offset);
                                         let end = self
@@ -856,5 +940,156 @@ fn make_error(message: &str, offset: usize, len: usize, doc: &Document) -> Diagn
         related_information: None,
         tags: None,
         data: None,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_strings_with_backslashes() {
+        // VFP doesn't use backslash escapes - backslashes are literal
+        // This is important for file paths like "C:\Data\"
+        let doc = Document::new(r#"#DEFINE DATA_PATH "C:\Data\""#.to_string());
+        let diagnostics = doc.diagnostics();
+
+        // Should have no errors - the string is properly terminated
+        let errors: Vec<_> = diagnostics
+            .iter()
+            .filter(|d| d.message.contains("Unterminated"))
+            .collect();
+        assert_eq!(
+            errors.len(),
+            0,
+            "Should not report unterminated string for backslash in path"
+        );
+    }
+
+    #[test]
+    fn test_preprocessor_with_if_keyword() {
+        // Keywords inside #DEFINE should not trigger block validation
+        let code = r#"
+#DEFINE ASSERT(cond) IF .NOT. (cond) THEN MESSAGEBOX("Failed")
+FUNCTION Test
+ENDFUNCTION
+"#;
+        let doc = Document::new(code.to_string());
+        let diagnostics = doc.diagnostics();
+
+        // Should have no errors - IF inside #DEFINE is not a block structure
+        let errors: Vec<_> = diagnostics
+            .iter()
+            .filter(|d| d.message.contains("ENDIF"))
+            .collect();
+        assert_eq!(
+            errors.len(),
+            0,
+            "Should not report unclosed IF for keywords inside #DEFINE"
+        );
+    }
+
+    #[test]
+    fn test_preprocessor_string_backslash() {
+        // Test the exact case from the bug report
+        let code = r#"#DEFINE PATH_SEPARATOR "\""#;
+        let doc = Document::new(code.to_string());
+        let diagnostics = doc.diagnostics();
+
+        // Should have no errors
+        let errors: Vec<_> = diagnostics
+            .iter()
+            .filter(|d| d.message.contains("Unterminated"))
+            .collect();
+        assert_eq!(
+            errors.len(),
+            0,
+            "Should not report unterminated string for backslash separator"
+        );
+    }
+
+    #[test]
+    fn test_real_unclosed_block() {
+        // Make sure we still catch real errors
+        let code = "IF .T.\n    ? \"Hello\"\n* Missing ENDIF\n";
+        let doc = Document::new(code.to_string());
+        let diagnostics = doc.diagnostics();
+
+        // Should report the missing ENDIF
+        let errors: Vec<_> = diagnostics
+            .iter()
+            .filter(|d| d.message.contains("IF") || d.message.contains("ENDIF"))
+            .collect();
+        assert!(
+            !errors.is_empty(),
+            "Should still catch real unclosed IF blocks"
+        );
+    }
+
+    #[test]
+    fn test_keywords_in_text_blocks() {
+        // Keywords inside TEXT blocks should not trigger validation
+        let code = r#"
+TEXT TO cOutput
+Thank you for your order.
+If you have questions, please contact us.
+ENDTEXT
+"#;
+        let doc = Document::new(code.to_string());
+        let diagnostics = doc.diagnostics();
+
+        // Should have no errors - "for" and "If" are just text
+        let errors: Vec<_> = diagnostics
+            .iter()
+            .filter(|d| d.message.contains("IF") || d.message.contains("FOR"))
+            .collect();
+        assert_eq!(
+            errors.len(),
+            0,
+            "Should not report keywords inside TEXT blocks"
+        );
+    }
+
+    #[test]
+    fn test_keywords_in_comments() {
+        // Keywords in comments should not trigger validation
+        let code = r#"
+* This is for future use
+* If we need to add more features
+FUNCTION Test
+ENDFUNC
+"#;
+        let doc = Document::new(code.to_string());
+        let diagnostics = doc.diagnostics();
+
+        // Should have no errors - "for" and "If" are in comments
+        let errors: Vec<_> = diagnostics
+            .iter()
+            .filter(|d| d.message.contains("IF") || d.message.contains("FOR"))
+            .collect();
+        assert_eq!(
+            errors.len(),
+            0,
+            "Should not report keywords inside comments"
+        );
+    }
+
+    #[test]
+    fn test_keywords_in_strings() {
+        // Keywords in strings should not trigger validation
+        let code = r#"
+LOCAL cMsg
+cMsg = "This is for testing if strings work"
+? "For each item in the list"
+"#;
+        let doc = Document::new(code.to_string());
+        let diagnostics = doc.diagnostics();
+
+        // Should have no errors - "for" and "if" are in strings
+        let errors: Vec<_> = diagnostics
+            .iter()
+            .filter(|d| d.message.contains("IF") || d.message.contains("FOR"))
+            .collect();
+        assert_eq!(errors.len(), 0, "Should not report keywords inside strings");
     }
 }

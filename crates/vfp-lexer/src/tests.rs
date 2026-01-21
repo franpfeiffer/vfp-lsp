@@ -524,15 +524,29 @@ fn test_single_quoted_string() {
 }
 
 #[test]
-fn test_string_with_escapes() {
-    let tokens = lex_with_text(r#""hello \"world\"""#);
+fn test_string_with_backslashes() {
+    // VFP doesn't use backslash escapes - backslashes are literal characters
+    // This is important for file paths like "C:\Data\"
+    let tokens = lex_with_text(r#""C:\Data\file.txt""#);
     assert_eq!(
         tokens,
         vec![(
             TokenKind::Literal {
                 kind: LiteralKind::StringDouble { terminated: true }
             },
-            r#""hello \"world\"""#
+            r#""C:\Data\file.txt""#
+        )]
+    );
+
+    // Test trailing backslash (common in path strings)
+    let tokens = lex_with_text(r#""C:\Data\""#);
+    assert_eq!(
+        tokens,
+        vec![(
+            TokenKind::Literal {
+                kind: LiteralKind::StringDouble { terminated: true }
+            },
+            r#""C:\Data\""#
         )]
     );
 }
