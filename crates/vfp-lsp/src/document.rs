@@ -883,16 +883,16 @@ impl Document {
         let mut found_paren = false;
         while i < self.tokens.len() {
             let token = &self.tokens[i];
-            
+
             if token.kind == TokenKind::LParen {
                 found_paren = true;
                 i += 1;
                 offset += token.len as usize;
-                
+
                 let mut param_start = None;
                 while i < self.tokens.len() {
                     let token = &self.tokens[i];
-                    
+
                     if token.kind == TokenKind::RParen {
                         if let Some(start) = param_start {
                             let param_text = self.content[start..offset].trim();
@@ -912,7 +912,7 @@ impl Document {
                     } else if token.kind == TokenKind::Ident && param_start.is_none() {
                         param_start = Some(offset);
                     }
-                    
+
                     offset += token.len as usize;
                     i += 1;
                 }
@@ -920,7 +920,7 @@ impl Document {
             } else if token.kind == TokenKind::Newline {
                 break;
             }
-            
+
             offset += token.len as usize;
             i += 1;
         }
@@ -1034,6 +1034,10 @@ impl DocumentStore {
 
     pub fn get(&self, uri: &Url) -> Option<dashmap::mapref::one::Ref<'_, Url, Document>> {
         self.documents.get(uri)
+    }
+
+    pub fn iter(&self) -> dashmap::iter::Iter<'_, Url, Document> {
+        self.documents.iter()
     }
 }
 

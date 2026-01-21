@@ -7,11 +7,12 @@ use vfp_lexer::{TokenKind, is_keyword, is_sql_keyword};
 
 use crate::capabilities::server_capabilities;
 use crate::document::DocumentStore;
+use crate::workspace::WorkspaceIndex;
 
-/// The main LSP backend.
 pub struct Backend {
     client: Client,
     documents: DocumentStore,
+    workspace: WorkspaceIndex,
 }
 
 impl Backend {
@@ -19,6 +20,7 @@ impl Backend {
         Self {
             client,
             documents: DocumentStore::new(),
+            workspace: WorkspaceIndex::new(),
         }
     }
 
@@ -99,6 +101,11 @@ impl LanguageServer for Backend {
         let uri = params.text_document.uri;
         let content = params.text_document.text;
         self.documents.open(uri.clone(), content);
+
+        if let Some(doc) = self.documents.get(&uri) {
+            self.workspace.index_file(uri.clone(), &doc);
+        }
+
         self.publish_diagnostics(uri).await;
     }
 
@@ -106,22 +113,35 @@ impl LanguageServer for Backend {
         let uri = params.text_document.uri;
         if let Some(change) = params.content_changes.into_iter().next() {
             self.documents.update(&uri, change.text);
+
+            if let Some(doc) = self.documents.get(&uri) {
+                self.workspace.remove_file(&uri);
+                self.workspace.index_file(uri.clone(), &doc);
+            }
+
             self.publish_diagnostics(uri).await;
         }
     }
 
     async fn did_save(&self, params: DidSaveTextDocumentParams) {
+        let uri = params.text_document.uri;
         if let Some(text) = params.text {
-            self.documents.update(&params.text_document.uri, text);
-            self.publish_diagnostics(params.text_document.uri).await;
+            self.documents.update(&uri, text);
+
+            if let Some(doc) = self.documents.get(&uri) {
+                self.workspace.remove_file(&uri);
+                self.workspace.index_file(uri.clone(), &doc);
+            }
+
+            self.publish_diagnostics(uri).await;
         }
     }
 
     async fn did_close(&self, params: DidCloseTextDocumentParams) {
-        self.documents.close(&params.text_document.uri);
-        self.client
-            .publish_diagnostics(params.text_document.uri, vec![], None)
-            .await;
+        let uri = params.text_document.uri;
+        self.workspace.remove_file(&uri);
+        self.documents.close(&uri);
+        self.client.publish_diagnostics(uri, vec![], None).await;
     }
 
     async fn hover(&self, params: HoverParams) -> Result<Option<Hover>> {
@@ -277,6 +297,15 @@ impl LanguageServer for Backend {
             ))));
         }
 
+        if let Some(symbols) = self.workspace.find_symbol(&word) {
+            if let Some(first) = symbols.first() {
+                return Ok(Some(GotoDefinitionResponse::Scalar(Location::new(
+                    first.file_uri.clone(),
+                    first.range,
+                ))));
+            }
+        }
+
         Ok(None)
     }
 
@@ -293,18 +322,22 @@ impl LanguageServer for Backend {
         };
 
         let mut locations = Vec::new();
-        let mut offset = 0;
 
-        for token in &doc.tokens {
-            if token.kind == TokenKind::Ident {
-                let text = &doc.content[offset..offset + token.len as usize];
-                if text.eq_ignore_ascii_case(&word) {
-                    let start = doc.offset_to_position(offset);
-                    let end = doc.offset_to_position(offset + token.len as usize);
-                    locations.push(Location::new(uri.clone(), Range::new(start, end)));
+        for entry in self.documents.iter() {
+            let (file_uri, file_doc) = entry.pair();
+            let mut offset = 0;
+
+            for token in &file_doc.tokens {
+                if token.kind == TokenKind::Ident {
+                    let text = &file_doc.content[offset..offset + token.len as usize];
+                    if text.eq_ignore_ascii_case(&word) {
+                        let start = file_doc.offset_to_position(offset);
+                        let end = file_doc.offset_to_position(offset + token.len as usize);
+                        locations.push(Location::new(file_uri.clone(), Range::new(start, end)));
+                    }
                 }
+                offset += token.len as usize;
             }
-            offset += token.len as usize;
         }
 
         if locations.is_empty() {
@@ -419,16 +452,224 @@ impl LanguageServer for Backend {
             active_parameter: None,
         }))
     }
+
+    async fn symbol(
+        &self,
+        params: WorkspaceSymbolParams,
+    ) -> Result<Option<Vec<SymbolInformation>>> {
+        let results = self.workspace.workspace_symbols(&params.query);
+        if results.is_empty() {
+            Ok(None)
+        } else {
+            Ok(Some(results))
+        }
+    }
+
+    async fn document_highlight(
+        &self,
+        params: DocumentHighlightParams,
+    ) -> Result<Option<Vec<DocumentHighlight>>> {
+        let uri = &params.text_document_position_params.text_document.uri;
+        let position = params.text_document_position_params.position;
+
+        let Some(doc) = self.documents.get(uri) else {
+            return Ok(None);
+        };
+
+        let Some(word) = doc.word_at_position(position) else {
+            return Ok(None);
+        };
+
+        let mut highlights = Vec::new();
+        let mut offset = 0;
+
+        for token in &doc.tokens {
+            if token.kind == TokenKind::Ident {
+                let text = &doc.content[offset..offset + token.len as usize];
+                if text.eq_ignore_ascii_case(&word) {
+                    let start = doc.offset_to_position(offset);
+                    let end = doc.offset_to_position(offset + token.len as usize);
+                    highlights.push(DocumentHighlight {
+                        range: Range::new(start, end),
+                        kind: Some(DocumentHighlightKind::TEXT),
+                    });
+                }
+            }
+            offset += token.len as usize;
+        }
+
+        if highlights.is_empty() {
+            Ok(None)
+        } else {
+            Ok(Some(highlights))
+        }
+    }
+
+    async fn rename(&self, params: RenameParams) -> Result<Option<WorkspaceEdit>> {
+        let uri = &params.text_document_position.text_document.uri;
+        let position = params.text_document_position.position;
+        let new_name = &params.new_name;
+
+        let Some(doc) = self.documents.get(uri) else {
+            return Ok(None);
+        };
+
+        let Some(word) = doc.word_at_position(position) else {
+            return Ok(None);
+        };
+
+        let mut changes = std::collections::HashMap::new();
+
+        for entry in self.documents.iter() {
+            let (file_uri, file_doc) = entry.pair();
+            let mut file_edits = Vec::new();
+            let mut offset = 0;
+
+            for token in &file_doc.tokens {
+                if token.kind == TokenKind::Ident {
+                    let text = &file_doc.content[offset..offset + token.len as usize];
+                    if text.eq_ignore_ascii_case(&word) {
+                        let start = file_doc.offset_to_position(offset);
+                        let end = file_doc.offset_to_position(offset + token.len as usize);
+                        file_edits.push(TextEdit {
+                            range: Range::new(start, end),
+                            new_text: new_name.clone(),
+                        });
+                    }
+                }
+                offset += token.len as usize;
+            }
+
+            if !file_edits.is_empty() {
+                changes.insert(file_uri.clone(), file_edits);
+            }
+        }
+
+        if changes.is_empty() {
+            Ok(None)
+        } else {
+            Ok(Some(WorkspaceEdit {
+                changes: Some(changes),
+                document_changes: None,
+                change_annotations: None,
+            }))
+        }
+    }
+
+    async fn folding_range(&self, params: FoldingRangeParams) -> Result<Option<Vec<FoldingRange>>> {
+        let uri = &params.text_document.uri;
+
+        let Some(doc) = self.documents.get(uri) else {
+            return Ok(None);
+        };
+
+        let mut ranges = Vec::new();
+        let mut block_stack: Vec<(String, u32)> = Vec::new();
+        let mut offset = 0;
+
+        for token in &doc.tokens {
+            if token.kind == TokenKind::Ident {
+                let text = &doc.content[offset..offset + token.len as usize];
+                let upper = text.to_ascii_uppercase();
+                let pos = doc.offset_to_position(offset);
+
+                match upper.as_str() {
+                    "FUNCTION" | "PROCEDURE" | "DEFINE" => {
+                        block_stack.push((upper, pos.line));
+                    }
+                    "IF" => {
+                        block_stack.push(("IF".to_string(), pos.line));
+                    }
+                    "FOR" | "WHILE" | "SCAN" | "TRY" | "WITH" | "TEXT" => {
+                        block_stack.push((upper, pos.line));
+                    }
+                    "DO" => {
+                        block_stack.push(("DO".to_string(), pos.line));
+                    }
+                    "CASE" => {
+                        if let Some((kind, _)) = block_stack.last_mut() {
+                            if kind == "DO" {
+                                *kind = "DO_CASE".to_string();
+                            }
+                        }
+                    }
+                    "ENDFUNC" | "ENDPROC" | "ENDDEFINE" => {
+                        if let Some((kind, start_line)) = block_stack.pop() {
+                            if matches!(kind.as_str(), "FUNCTION" | "PROCEDURE" | "DEFINE") {
+                                ranges.push(FoldingRange {
+                                    start_line,
+                                    start_character: None,
+                                    end_line: pos.line,
+                                    end_character: None,
+                                    kind: Some(FoldingRangeKind::Region),
+                                    collapsed_text: None,
+                                });
+                            }
+                        }
+                    }
+                    "ENDIF" => {
+                        if let Some((kind, start_line)) = block_stack.pop() {
+                            if kind == "IF" {
+                                ranges.push(FoldingRange {
+                                    start_line,
+                                    start_character: None,
+                                    end_line: pos.line,
+                                    end_character: None,
+                                    kind: Some(FoldingRangeKind::Region),
+                                    collapsed_text: None,
+                                });
+                            }
+                        }
+                    }
+                    "ENDFOR" | "ENDWHILE" | "ENDSCAN" | "ENDTRY" | "ENDWITH" | "ENDTEXT" => {
+                        if let Some((_, start_line)) = block_stack.pop() {
+                            ranges.push(FoldingRange {
+                                start_line,
+                                start_character: None,
+                                end_line: pos.line,
+                                end_character: None,
+                                kind: Some(FoldingRangeKind::Region),
+                                collapsed_text: None,
+                            });
+                        }
+                    }
+                    "ENDDO" | "ENDCASE" => {
+                        if let Some((_, start_line)) = block_stack.pop() {
+                            ranges.push(FoldingRange {
+                                start_line,
+                                start_character: None,
+                                end_line: pos.line,
+                                end_character: None,
+                                kind: Some(FoldingRangeKind::Region),
+                                collapsed_text: None,
+                            });
+                        }
+                    }
+                    _ => {}
+                }
+            }
+            offset += token.len as usize;
+        }
+
+        if ranges.is_empty() {
+            Ok(None)
+        } else {
+            Ok(Some(ranges))
+        }
+    }
 }
 
-fn find_function_name_at_position(doc: &crate::document::Document, offset: usize) -> Option<String> {
+fn find_function_name_at_position(
+    doc: &crate::document::Document,
+    offset: usize,
+) -> Option<String> {
     let mut current_offset = offset;
     let mut paren_count = 0;
 
     while current_offset > 0 {
         current_offset -= 1;
         let ch = doc.content.chars().nth(current_offset)?;
-        
+
         if ch == ')' {
             paren_count += 1;
         } else if ch == '(' {
@@ -437,7 +678,7 @@ fn find_function_name_at_position(doc: &crate::document::Document, offset: usize
                 while name_end > 0 && doc.content.chars().nth(name_end - 1)?.is_whitespace() {
                     name_end -= 1;
                 }
-                
+
                 let mut name_start = name_end;
                 while name_start > 0 {
                     let ch = doc.content.chars().nth(name_start - 1)?;
@@ -447,7 +688,7 @@ fn find_function_name_at_position(doc: &crate::document::Document, offset: usize
                         break;
                     }
                 }
-                
+
                 if name_start < name_end {
                     return Some(doc.content[name_start..name_end].to_string());
                 }
@@ -456,7 +697,7 @@ fn find_function_name_at_position(doc: &crate::document::Document, offset: usize
             paren_count -= 1;
         }
     }
-    
+
     None
 }
 

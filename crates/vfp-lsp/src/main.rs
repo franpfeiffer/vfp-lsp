@@ -3,6 +3,7 @@
 mod backend;
 mod capabilities;
 mod document;
+mod workspace;
 
 use tower_lsp::{LspService, Server};
 use tracing_subscriber::EnvFilter;

@@ -49,12 +49,14 @@ pub fn server_capabilities() -> ServerCapabilities {
             },
         )),
 
-        rename_provider: None,
+        document_highlight_provider: Some(OneOf::Left(true)),
+
+        rename_provider: Some(OneOf::Left(true)),
+        folding_range_provider: Some(FoldingRangeProviderCapability::Simple(true)),
+
         document_formatting_provider: None,
         code_action_provider: None,
         code_lens_provider: None,
-        document_highlight_provider: None,
-        folding_range_provider: None,
         execute_command_provider: None,
         workspace: None,
         call_hierarchy_provider: None,
