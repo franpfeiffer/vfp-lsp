@@ -83,14 +83,14 @@ See [editors/neovim/README.md](editors/neovim/README.md) for detailed instructio
 
 Quick setup with lazy.nvim:
 ```lua
-{
-  dir = "/path/to/vfp-lsp/editors/neovim",
-  config = function()
-    require("vfp-lsp").setup({
-      cmd = "/path/to/target/release/vfp-lsp",
-    })
-  end,
-  ft = { "vfp" },
+return {
+    {
+        "franpfeiffer/vfp-lsp",
+        ft = { "vfp", "foxpro" },
+        config = function()
+            require("vfp-lsp").setup()
+        end,
+    }
 }
 ```
 
@@ -101,7 +101,7 @@ Quick setup with lazy.nvim:
 ```json
 {
   "vfp.server.path": "/path/to/vfp-lsp",
-  "vfp.trace.server": "verbose"
+  "vfp.trace.server": "verbose" // for better debugging
 }
 ```
 

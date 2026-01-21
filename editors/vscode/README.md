@@ -27,9 +27,9 @@ Language support for Visual FoxPro (VFP) in Visual Studio Code, powered by VFP-L
 
 ## Installation
 
-1. Install this extension from the VS Code Marketplace
+1. Install this extension from the VSCode Marketplace
 2. The language server will be automatically downloaded on first use
-3. Open any VFP file and start coding!
+3. Open any VFP file and enjoy hell if you have to code in visual foxpro
 
 ### Manual Installation
 
@@ -71,7 +71,7 @@ This extension supports modern and legacy VFP syntax:
 
 ## Requirements
 
-- Visual Studio Code 1.75.0 or higher or whatever fork you like
+- Visual Studio Code +1.74.0 or whatever fork you like
 - VFP-LSP language server
 
 ## License

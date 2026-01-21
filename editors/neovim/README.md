@@ -7,28 +7,21 @@ This directory contains Neovim configuration for the Visual FoxPro Language Serv
 ### Using lazy.nvim
 
 ```lua
-{
-  "franpfeiffer/vfp-lsp",
-  config = function()
-    require("vfp-lsp").setup({
-      -- Optional: specify path to vfp-lsp if not in PATH
-      -- cmd = "/path/to/vfp-lsp",
-    })
-  end,
-  ft = { "vfp", "foxpro" },
+return {
+    {
+        "franpfeiffer/vfp-lsp",
+        ft = { "vfp", "foxpro" },
+        config = function()
+            require("vfp-lsp").setup()
+        end,
+    }
 }
 ```
 
 ### Using packer.nvim
 
 ```lua
-use {
-  "franpfeiffer/vfp-lsp",
-  config = function()
-    require("vfp-lsp").setup()
-  end,
-  ft = { "vfp", "foxpro" },
-}
+nobody uses packer anymore
 ```
 
 ### Manual Installation
@@ -41,12 +34,20 @@ use {
 2. Add the binary to your PATH or specify its location in setup.
 
 3. Add this to your Neovim config:
-   ```lua
-   -- In your init.lua
-   require("vfp-lsp").setup({
-     cmd = "/path/to/target/release/vfp-lsp",
-   })
-   ```
+```lua
+return {
+    {
+        dir = "/your/path/to/vfp-lsp/editors/neovim",
+        ft = { "vfp", "foxpro" },
+        config = function()
+            require("vfp-lsp").setup({
+                cmd = { "/your/path/to/vfp-lsp/target/release/vfp-lsp" },
+                auto_install = false,
+            })
+        end,
+    }
+}
+```
 
 ## Configuration
 
