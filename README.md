@@ -1,6 +1,5 @@
 # VFP-LSP
 
-[![CI](https://github.com/franpfeiffer/vfp-lsp/workflows/CI/badge.svg)](https://github.com/franpfeiffer/vfp-lsp/actions)
 [![Release](https://github.com/franpfeiffer/vfp-lsp/workflows/Release/badge.svg)](https://github.com/franpfeiffer/vfp-lsp/releases)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
