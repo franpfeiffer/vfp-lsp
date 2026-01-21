@@ -119,18 +119,34 @@ require("vfp-lsp").setup({
 
 ## Development
 
-### Running the Lexer Example
+See [DEVELOPING.md](DEVELOPING.md) for detailed development instructions.
+
+### Quick Start
 
 ```bash
-cargo run -p vfp-lexer --example lex_file test-fixtures/sample.prg
+# Build
+cargo build
+
+# Test
+cargo test
+
+# Format code
+cargo fmt
+
+# Lint
+cargo clippy
 ```
 
-### Testing the LSP Server
+### Line Endings
 
-Start the server manually for testing:
+This project uses Unix-style (LF) line endings. If you get formatting errors on Windows:
+
 ```bash
-cargo run -p vfp-lsp
+git config core.autocrlf input
+git add --renormalize .
 ```
+
+See [DEVELOPING.md](DEVELOPING.md) for more details.
 
 ## License
 
