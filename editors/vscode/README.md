@@ -46,7 +46,7 @@ If automatic installation fails:
 {
   // Path to vfp-lsp executable (optional)
   "vfp.server.path": "/path/to/vfp-lsp",
-  
+
   // Enable verbose logging for debugging
   "vfp.trace.server": "verbose"
 }
@@ -71,21 +71,9 @@ This extension supports modern and legacy VFP syntax:
 
 ## Requirements
 
-- Visual Studio Code 1.75.0 or higher
-- VFP-LSP language server (auto-installed)
-
-## Known Issues
-
-See [GitHub Issues](https://github.com/franpfeiffer/vfp-lsp/issues)
-
-## Contributing
-
-Contributions are welcome! See [CONTRIBUTING.md](https://github.com/franpfeiffer/vfp-lsp/blob/main/CONTRIBUTING.md)
+- Visual Studio Code 1.75.0 or higher or whatever fork you like
+- VFP-LSP language server
 
 ## License
 
-MIT - See [LICENSE](https://github.com/franpfeiffer/vfp-lsp/blob/main/LICENSE)
-
-## Release Notes
-
-See [CHANGELOG.md](https://github.com/franpfeiffer/vfp-lsp/blob/main/CHANGELOG.md)
+MIT - See [LICENSE](https://github.com/franpfeiffer/vfp-lsp/blob/master/LICENSE)
