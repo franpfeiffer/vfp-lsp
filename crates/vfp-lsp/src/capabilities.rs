@@ -2,10 +2,8 @@
 
 use tower_lsp::lsp_types::*;
 
-/// Build the server capabilities to advertise to the client.
 pub fn server_capabilities() -> ServerCapabilities {
     ServerCapabilities {
-        // Text document sync
         text_document_sync: Some(TextDocumentSyncCapability::Options(
             TextDocumentSyncOptions {
                 open_close: Some(true),
@@ -18,10 +16,8 @@ pub fn server_capabilities() -> ServerCapabilities {
             },
         )),
 
-        // Hover support
         hover_provider: Some(HoverProviderCapability::Simple(true)),
 
-        // Completion support
         completion_provider: Some(CompletionOptions {
             resolve_provider: Some(false),
             trigger_characters: Some(vec![".".to_string(), "#".to_string()]),
@@ -30,26 +26,17 @@ pub fn server_capabilities() -> ServerCapabilities {
             completion_item: None,
         }),
 
-        // Definition support (go to definition)
         definition_provider: Some(OneOf::Left(true)),
-
-        // References support (find all references)
         references_provider: Some(OneOf::Left(true)),
-
-        // Document symbol support (outline)
         document_symbol_provider: Some(OneOf::Left(true)),
-
-        // Workspace symbol support
         workspace_symbol_provider: Some(OneOf::Left(true)),
 
-        // Signature help
         signature_help_provider: Some(SignatureHelpOptions {
             trigger_characters: Some(vec!["(".to_string(), ",".to_string()]),
             retrigger_characters: None,
             work_done_progress_options: WorkDoneProgressOptions::default(),
         }),
 
-        // Semantic tokens (for syntax highlighting)
         semantic_tokens_provider: Some(SemanticTokensServerCapabilities::SemanticTokensOptions(
             SemanticTokensOptions {
                 work_done_progress_options: WorkDoneProgressOptions::default(),
@@ -62,7 +49,6 @@ pub fn server_capabilities() -> ServerCapabilities {
             },
         )),
 
-        // Other capabilities we might add later
         rename_provider: None,
         document_formatting_provider: None,
         code_action_provider: None,
@@ -90,7 +76,6 @@ pub fn server_capabilities() -> ServerCapabilities {
     }
 }
 
-/// Semantic token types we support.
 fn semantic_token_types() -> Vec<SemanticTokenType> {
     vec![
         SemanticTokenType::NAMESPACE,
@@ -119,7 +104,6 @@ fn semantic_token_types() -> Vec<SemanticTokenType> {
     ]
 }
 
-/// Semantic token modifiers we support.
 fn semantic_token_modifiers() -> Vec<SemanticTokenModifier> {
     vec![
         SemanticTokenModifier::DECLARATION,

@@ -62,7 +62,6 @@ impl Backend {
         )
     }
 
-    /// Publish diagnostics for a document.
     async fn publish_diagnostics(&self, uri: Url) {
         if let Some(doc) = self.documents.get(&uri) {
             let diagnostics = doc.diagnostics();
@@ -120,7 +119,6 @@ impl LanguageServer for Backend {
 
     async fn did_close(&self, params: DidCloseTextDocumentParams) {
         self.documents.close(&params.text_document.uri);
-        // Clear diagnostics
         self.client
             .publish_diagnostics(params.text_document.uri, vec![], None)
             .await;
@@ -140,7 +138,6 @@ impl LanguageServer for Backend {
 
         let upper = word.to_ascii_uppercase();
 
-        // Provide hover info for keywords
         let content = if is_keyword(&upper) {
             get_keyword_documentation(&upper)
         } else if is_sql_keyword(&upper) {
@@ -165,7 +162,6 @@ impl LanguageServer for Backend {
             return Ok(None);
         };
 
-        // Get context from trigger character
         let trigger = params
             .context
             .and_then(|c| c.trigger_character)
@@ -174,7 +170,6 @@ impl LanguageServer for Backend {
         let mut completions = Vec::new();
 
         if trigger == "#" {
-            // Preprocessor directives
             for directive in &[
                 "DEFINE", "UNDEF", "IF", "IFDEF", "IFNDEF", "ELSE", "ELIF", "ENDIF", "INCLUDE",
             ] {
@@ -186,7 +181,6 @@ impl LanguageServer for Backend {
                 });
             }
         } else if trigger == "." {
-            // After a dot, suggest boolean literals and logical operators
             for item in &[".T.", ".F.", ".NULL.", ".AND.", ".OR.", ".NOT."] {
                 completions.push(CompletionItem {
                     label: item.to_string(),
@@ -195,7 +189,6 @@ impl LanguageServer for Backend {
                 });
             }
         } else {
-            // General completions - keywords
             for keyword in VFP_KEYWORDS {
                 completions.push(CompletionItem {
                     label: keyword.to_string(),
@@ -204,7 +197,6 @@ impl LanguageServer for Backend {
                 });
             }
 
-            // SQL keywords
             for keyword in SQL_KEYWORDS {
                 completions.push(CompletionItem {
                     label: keyword.to_string(),
@@ -214,7 +206,6 @@ impl LanguageServer for Backend {
                 });
             }
 
-            // Built-in functions
             for func in BUILTIN_FUNCTIONS {
                 completions.push(CompletionItem {
                     label: format!("{}()", func),
@@ -225,7 +216,6 @@ impl LanguageServer for Backend {
                 });
             }
 
-            // Add identifiers from current document
             let mut seen = std::collections::HashSet::new();
             let mut pos = 0;
             for token in &doc.tokens {
@@ -275,13 +265,11 @@ impl LanguageServer for Backend {
             return Ok(None);
         };
 
-        // Skip built-in keywords - hover shows their docs
         let upper_word = word.to_ascii_uppercase();
         if Self::is_builtin_keyword(&upper_word) {
             return Ok(None);
         }
 
-        // Search for function/procedure/class definitions using find_definition
         if let Some(range) = doc.find_definition(&word) {
             return Ok(Some(GotoDefinitionResponse::Scalar(Location::new(
                 uri.clone(),
@@ -344,19 +332,19 @@ impl LanguageServer for Backend {
         for token in &doc.tokens {
             let token_type = match token.kind {
                 TokenKind::CommentStar | TokenKind::CommentAmpAmp | TokenKind::CommentNote => {
-                    Some(17) // comment
+                    Some(17)
                 }
                 TokenKind::Literal { kind } => match kind {
                     vfp_lexer::LiteralKind::StringDouble { .. }
                     | vfp_lexer::LiteralKind::StringSingle { .. }
-                    | vfp_lexer::LiteralKind::StringBracket { .. } => Some(18), // string
+                    | vfp_lexer::LiteralKind::StringBracket { .. } => Some(18),
                     vfp_lexer::LiteralKind::Int
                     | vfp_lexer::LiteralKind::Float
                     | vfp_lexer::LiteralKind::Hex
                     | vfp_lexer::LiteralKind::Date
-                    | vfp_lexer::LiteralKind::DateTime => Some(19), // number
+                    | vfp_lexer::LiteralKind::DateTime => Some(19),
                 },
-                TokenKind::True | TokenKind::False | TokenKind::Null => Some(19), // number (constants)
+                TokenKind::True | TokenKind::False | TokenKind::Null => Some(19),
                 TokenKind::PreDefine
                 | TokenKind::PreUndef
                 | TokenKind::PreIf
@@ -365,14 +353,14 @@ impl LanguageServer for Backend {
                 | TokenKind::PreElse
                 | TokenKind::PreElif
                 | TokenKind::PreEndIf
-                | TokenKind::PreInclude => Some(14), // macro
-                TokenKind::DotAnd | TokenKind::DotOr | TokenKind::DotNot => Some(21), // operator
+                | TokenKind::PreInclude => Some(14),
+                TokenKind::DotAnd | TokenKind::DotOr | TokenKind::DotNot => Some(21),
                 TokenKind::Ident => {
                     let text = &doc.content[offset..offset + token.len as usize];
                     if is_keyword(text) || is_sql_keyword(text) {
-                        Some(15) // keyword
+                        Some(15)
                     } else {
-                        None // identifier - no semantic token
+                        None
                     }
                 }
                 _ => None,
@@ -407,9 +395,71 @@ impl LanguageServer for Backend {
             data,
         })))
     }
+
+    async fn signature_help(&self, params: SignatureHelpParams) -> Result<Option<SignatureHelp>> {
+        let uri = &params.text_document_position_params.text_document.uri;
+        let position = params.text_document_position_params.position;
+
+        let Some(doc) = self.documents.get(uri) else {
+            return Ok(None);
+        };
+
+        let offset = doc.position_to_offset(position);
+        let Some(function_name) = find_function_name_at_position(&doc, offset) else {
+            return Ok(None);
+        };
+
+        let Some(signature_info) = doc.find_signature(&function_name) else {
+            return Ok(None);
+        };
+
+        Ok(Some(SignatureHelp {
+            signatures: vec![signature_info],
+            active_signature: Some(0),
+            active_parameter: None,
+        }))
+    }
 }
 
-/// Get documentation for a VFP keyword.
+fn find_function_name_at_position(doc: &crate::document::Document, offset: usize) -> Option<String> {
+    let mut current_offset = offset;
+    let mut paren_count = 0;
+
+    while current_offset > 0 {
+        current_offset -= 1;
+        let ch = doc.content.chars().nth(current_offset)?;
+        
+        if ch == ')' {
+            paren_count += 1;
+        } else if ch == '(' {
+            if paren_count == 0 {
+                let mut name_end = current_offset;
+                while name_end > 0 && doc.content.chars().nth(name_end - 1)?.is_whitespace() {
+                    name_end -= 1;
+                }
+                
+                let mut name_start = name_end;
+                while name_start > 0 {
+                    let ch = doc.content.chars().nth(name_start - 1)?;
+                    if ch.is_alphanumeric() || ch == '_' {
+                        name_start -= 1;
+                    } else {
+                        break;
+                    }
+                }
+                
+                if name_start < name_end {
+                    return Some(doc.content[name_start..name_end].to_string());
+                }
+                return None;
+            }
+            paren_count -= 1;
+        }
+    }
+    
+    None
+}
+
 fn get_keyword_documentation(keyword: &str) -> Option<String> {
     Some(match keyword {
         "FUNCTION" => "**FUNCTION**\n\nDefines a user-defined function.\n\n```foxpro\nFUNCTION name(parameters)\n    * code\n    RETURN value\nENDFUNC\n```".to_string(),
@@ -492,7 +542,6 @@ fn get_keyword_documentation(keyword: &str) -> Option<String> {
     })
 }
 
-/// Get documentation for an SQL keyword.
 fn get_sql_keyword_documentation(keyword: &str) -> Option<String> {
     Some(match keyword {
         "SELECT" => "**SELECT**\n\nRetrieve data from tables.\n\n```foxpro\nSELECT columns FROM table ;\n    WHERE condition ;\n    ORDER BY column ;\n    INTO CURSOR cursorname\n```".to_string(),
@@ -548,7 +597,6 @@ fn get_sql_keyword_documentation(keyword: &str) -> Option<String> {
     })
 }
 
-/// Common VFP keywords.
 const VFP_KEYWORDS: &[&str] = &[
     "IF",
     "ELSE",
@@ -605,14 +653,12 @@ const VFP_KEYWORDS: &[&str] = &[
     "STORE",
 ];
 
-/// SQL keywords.
 const SQL_KEYWORDS: &[&str] = &[
     "SELECT", "FROM", "WHERE", "ORDER", "BY", "GROUP", "HAVING", "INTO", "CURSOR", "TABLE",
     "INSERT", "UPDATE", "DELETE", "SET", "VALUES", "JOIN", "INNER", "LEFT", "RIGHT", "OUTER", "ON",
     "DISTINCT", "TOP", "UNION", "ALL", "AND", "OR", "NOT", "LIKE", "BETWEEN", "IS", "NULL",
 ];
 
-/// Built-in VFP functions.
 const BUILTIN_FUNCTIONS: &[&str] = &[
     "ABS",
     "ACLASS",

@@ -129,13 +129,8 @@ impl Document {
             offset += token.len as usize;
         }
 
-        // Add semantic validation
         diagnostics.extend(self.semantic_diagnostics());
-
-        // Add block structure validation
         diagnostics.extend(self.block_diagnostics());
-
-        // Add duplicate definition detection
         diagnostics.extend(self.duplicate_diagnostics());
 
         diagnostics
@@ -151,9 +146,7 @@ impl Document {
                 let text = &self.content[offset..offset + token.len as usize];
                 let upper = text.to_ascii_uppercase();
 
-                // Skip if it's a valid keyword
                 if !vfp_lexer::is_keyword(&upper) && !vfp_lexer::is_sql_keyword(&upper) {
-                    // Check for possible typos
                     if let Some(suggestion) = find_similar_keyword(&upper) {
                         let start = self.offset_to_position(offset);
                         let end = self.offset_to_position(offset + token.len as usize);
@@ -181,7 +174,6 @@ impl Document {
         diagnostics
     }
 
-    /// Block structure validation - checks for unclosed blocks.
     fn block_diagnostics(&self) -> Vec<Diagnostic> {
         let mut diagnostics = Vec::new();
         let mut block_stack: Vec<(String, usize, Position)> = Vec::new();
@@ -191,39 +183,33 @@ impl Document {
         let mut in_text_block = false;
 
         for token in &self.tokens {
-            // Skip comments entirely - they can contain words like "for" or "if"
             if token.kind.is_comment() {
                 offset += token.len as usize;
                 continue;
             }
 
-            // Skip string literals - they can contain keywords too
             if matches!(token.kind, TokenKind::Literal { .. }) {
                 offset += token.len as usize;
                 continue;
             }
 
-            // Track preprocessor directives - don't parse keywords inside them
             if token.kind.is_preprocessor() {
                 in_preprocessor_line = true;
                 offset += token.len as usize;
                 continue;
             }
 
-            // End of preprocessor line
             if in_preprocessor_line && token.kind == TokenKind::Newline {
                 in_preprocessor_line = false;
                 offset += token.len as usize;
                 continue;
             }
 
-            // Skip parsing inside preprocessor directives
             if in_preprocessor_line {
                 offset += token.len as usize;
                 continue;
             }
 
-            // Track text merge regions - don't parse inside <<...>>
             if token.kind == TokenKind::TextMergeOpen {
                 in_text_merge = true;
                 offset += token.len as usize;
@@ -235,7 +221,6 @@ impl Document {
                 continue;
             }
 
-            // Skip parsing inside text merge expressions
             if in_text_merge {
                 offset += token.len as usize;
                 continue;
@@ -246,7 +231,6 @@ impl Document {
                 let upper = text.to_ascii_uppercase();
                 let pos = self.offset_to_position(offset);
 
-                // Check for TEXT block start/end
                 if upper == "TEXT" && !in_text_block {
                     block_stack.push(("TEXT".to_string(), offset, pos));
                     in_text_block = true;
@@ -269,41 +253,32 @@ impl Document {
                     continue;
                 }
 
-                // Skip parsing keywords inside TEXT blocks
                 if in_text_block {
                     offset += token.len as usize;
                     continue;
                 }
 
                 match upper.as_str() {
-                    // Block openers
                     "IF" => block_stack.push(("IF".to_string(), offset, pos)),
                     "FOR" => block_stack.push(("FOR".to_string(), offset, pos)),
                     "WHILE" => {
-                        // Check if previous was DO_TENTATIVE -> make it DO_WHILE
                         if let Some((kind, _, _)) = block_stack.last_mut() {
                             if kind == "DO_TENTATIVE" {
                                 *kind = "DO_WHILE".to_string();
                             } else {
-                                // Standalone WHILE block
                                 block_stack.push(("WHILE".to_string(), offset, pos));
                             }
                         } else {
-                            // Standalone WHILE block
                             block_stack.push(("WHILE".to_string(), offset, pos));
                         }
                     }
                     "DO" => {
-                        // DO is only a block if followed by WHILE or CASE
-                        // DO procedure calls are not blocks
-                        // We'll mark it tentatively and remove if not followed by WHILE/CASE
                         block_stack.push(("DO_TENTATIVE".to_string(), offset, pos));
                     }
                     "SCAN" => block_stack.push(("SCAN".to_string(), offset, pos)),
                     "TRY" => block_stack.push(("TRY".to_string(), offset, pos)),
                     "WITH" => block_stack.push(("WITH".to_string(), offset, pos)),
                     "CASE" => {
-                        // If previous was DO_TENTATIVE, convert to DO_CASE
                         if let Some((kind, _, _)) = block_stack.last_mut() {
                             if kind == "DO_TENTATIVE" {
                                 *kind = "DO_CASE".to_string();
@@ -314,7 +289,6 @@ impl Document {
                     "PROCEDURE" => block_stack.push(("PROCEDURE".to_string(), offset, pos)),
                     "DEFINE" => block_stack.push(("DEFINE".to_string(), offset, pos)),
 
-                    // Block closers
                     "ENDIF" => {
                         if !close_block(&mut block_stack, "IF", &mut diagnostics, offset, self) {
                             diagnostics.push(make_error(
@@ -336,7 +310,6 @@ impl Document {
                         }
                     }
                     "ENDDO" => {
-                        // Can close DO_WHILE or WHILE (not DO_TENTATIVE - those are procedure calls)
                         let closed = close_block(
                             &mut block_stack,
                             "DO_WHILE",
@@ -460,9 +433,7 @@ impl Document {
             offset += token.len as usize;
         }
 
-        // Report unclosed blocks (skip DO_TENTATIVE - those are procedure calls)
         for (kind, _, pos) in block_stack {
-            // Skip tentative DO - it's a procedure call, not a block
             if kind == "DO_TENTATIVE" {
                 continue;
             }
@@ -480,7 +451,7 @@ impl Document {
                 "FUNCTION" => "ENDFUNC",
                 "PROCEDURE" => "ENDPROC",
                 "DEFINE" => "ENDDEFINE",
-                _ => continue, // Skip unknown block types
+                _ => continue,
             };
             diagnostics.push(Diagnostic {
                 range: Range::new(pos, pos),
@@ -498,12 +469,10 @@ impl Document {
         diagnostics
     }
 
-    /// Duplicate definition detection.
     fn duplicate_diagnostics(&self) -> Vec<Diagnostic> {
         use std::collections::HashMap;
 
         let mut diagnostics = Vec::new();
-        // Map from name -> (kind, offset, position)
         let mut definitions: HashMap<String, Vec<(String, usize, Position)>> = HashMap::new();
         let mut offset = 0;
         let mut i = 0;
@@ -517,7 +486,6 @@ impl Document {
 
                 match upper.as_str() {
                     "FUNCTION" | "PROCEDURE" => {
-                        // Next non-trivia token is the name
                         let mut j = i + 1;
                         let mut name_offset = offset + token.len as usize;
 
@@ -542,7 +510,6 @@ impl Document {
                         }
                     }
                     "DEFINE" => {
-                        // Look for CLASS keyword then name
                         let mut j = i + 1;
                         let mut class_offset = offset + token.len as usize;
 
@@ -590,7 +557,6 @@ impl Document {
             i += 1;
         }
 
-        // Report duplicates
         for (name, defs) in definitions {
             if defs.len() > 1 {
                 for (kind, def_offset, pos) in &defs[1..] {
@@ -650,7 +616,6 @@ impl Document {
         None
     }
 
-    /// Get all symbols in the document.
     pub fn symbols(&self) -> Vec<DocumentSymbol> {
         let mut symbols = Vec::new();
         let mut offset = 0;
@@ -659,14 +624,12 @@ impl Document {
         while i < self.tokens.len() {
             let token = &self.tokens[i];
 
-            // Look for FUNCTION, PROCEDURE, CLASS definitions
             if token.kind == TokenKind::Ident {
                 let text = &self.content[offset..offset + token.len as usize];
                 let upper = text.to_ascii_uppercase();
 
                 match upper.as_str() {
                     "FUNCTION" | "PROCEDURE" => {
-                        // Next non-trivia token should be the name
                         let start_offset = offset;
                         let mut name_offset = offset + token.len as usize;
                         let mut j = i + 1;
@@ -709,7 +672,6 @@ impl Document {
                         }
                     }
                     "DEFINE" => {
-                        // Look for CLASS keyword
                         let mut class_offset = offset + token.len as usize;
                         let mut j = i + 1;
 
@@ -719,7 +681,6 @@ impl Document {
                                 let next_text =
                                     &self.content[class_offset..class_offset + next.len as usize];
                                 if next_text.eq_ignore_ascii_case("CLASS") {
-                                    // Next token is the class name
                                     let mut name_offset = class_offset + next.len as usize;
                                     let mut k = j + 1;
 
@@ -774,7 +735,6 @@ impl Document {
         symbols
     }
 
-    /// Find definition of a symbol (FUNCTION, PROCEDURE, CLASS) by name
     pub fn find_definition(&self, name: &str) -> Option<Range> {
         let mut offset = 0;
         let mut i = 0;
@@ -788,7 +748,6 @@ impl Document {
 
                 match upper.as_str() {
                     "FUNCTION" | "PROCEDURE" => {
-                        // Look ahead for the function/procedure name
                         let mut j = i + 1;
                         let mut name_offset = offset + token.len as usize;
 
@@ -812,7 +771,6 @@ impl Document {
                         }
                     }
                     "DEFINE" => {
-                        // Look for CLASS keyword, then name
                         let mut j = i + 1;
                         let mut class_offset = offset + token.len as usize;
 
@@ -863,9 +821,192 @@ impl Document {
 
         None
     }
+
+    pub fn find_signature(&self, name: &str) -> Option<SignatureInformation> {
+        let mut offset = 0;
+        let mut i = 0;
+
+        while i < self.tokens.len() {
+            let token = &self.tokens[i];
+
+            if token.kind == TokenKind::Ident {
+                let text = &self.content[offset..offset + token.len as usize];
+                let upper = text.to_ascii_uppercase();
+
+                match upper.as_str() {
+                    "FUNCTION" | "PROCEDURE" => {
+                        let kind = upper.clone();
+                        let mut j = i + 1;
+                        let mut name_offset = offset + token.len as usize;
+
+                        while j < self.tokens.len() {
+                            let next = &self.tokens[j];
+                            if !next.kind.is_trivia() {
+                                if next.kind == TokenKind::Ident {
+                                    let func_name =
+                                        &self.content[name_offset..name_offset + next.len as usize];
+                                    if func_name.eq_ignore_ascii_case(name) {
+                                        return self.extract_signature(
+                                            func_name,
+                                            &kind,
+                                            j + 1,
+                                            name_offset + next.len as usize,
+                                        );
+                                    }
+                                }
+                                break;
+                            }
+                            name_offset += next.len as usize;
+                            j += 1;
+                        }
+                    }
+                    _ => {}
+                }
+            }
+
+            offset += token.len as usize;
+            i += 1;
+        }
+
+        None
+    }
+
+    fn extract_signature(
+        &self,
+        name: &str,
+        kind: &str,
+        token_idx: usize,
+        mut offset: usize,
+    ) -> Option<SignatureInformation> {
+        let mut params = Vec::new();
+        let mut i = token_idx;
+        let mut found_paren = false;
+        while i < self.tokens.len() {
+            let token = &self.tokens[i];
+            
+            if token.kind == TokenKind::LParen {
+                found_paren = true;
+                i += 1;
+                offset += token.len as usize;
+                
+                let mut param_start = None;
+                while i < self.tokens.len() {
+                    let token = &self.tokens[i];
+                    
+                    if token.kind == TokenKind::RParen {
+                        if let Some(start) = param_start {
+                            let param_text = self.content[start..offset].trim();
+                            if !param_text.is_empty() {
+                                params.push(param_text.to_string());
+                            }
+                        }
+                        break;
+                    } else if token.kind == TokenKind::Comma {
+                        if let Some(start) = param_start {
+                            let param_text = self.content[start..offset].trim();
+                            if !param_text.is_empty() {
+                                params.push(param_text.to_string());
+                            }
+                        }
+                        param_start = None;
+                    } else if token.kind == TokenKind::Ident && param_start.is_none() {
+                        param_start = Some(offset);
+                    }
+                    
+                    offset += token.len as usize;
+                    i += 1;
+                }
+                break;
+            } else if token.kind == TokenKind::Newline {
+                break;
+            }
+            
+            offset += token.len as usize;
+            i += 1;
+        }
+
+        if !found_paren {
+            while i < self.tokens.len() {
+                let token = &self.tokens[i];
+
+                if token.kind == TokenKind::Ident {
+                    let text = &self.content[offset..offset + token.len as usize];
+                    let upper = text.to_ascii_uppercase();
+
+                    if upper == "LPARAMETERS" || upper == "PARAMETERS" {
+                        i += 1;
+                        offset += token.len as usize;
+
+                        let mut param_start = None;
+                        while i < self.tokens.len() {
+                            let token = &self.tokens[i];
+
+                            if token.kind == TokenKind::Newline {
+                                if let Some(start) = param_start {
+                                    let param_text = self.content[start..offset].trim();
+                                    if !param_text.is_empty() {
+                                        params.push(param_text.to_string());
+                                    }
+                                }
+                                break;
+                            } else if token.kind == TokenKind::Comma {
+                                if let Some(start) = param_start {
+                                    let param_text = self.content[start..offset].trim();
+                                    if !param_text.is_empty() {
+                                        params.push(param_text.to_string());
+                                    }
+                                }
+                                param_start = None;
+                            } else if token.kind == TokenKind::Ident && param_start.is_none() {
+                                param_start = Some(offset);
+                            }
+
+                            offset += token.len as usize;
+                            i += 1;
+                        }
+                        break;
+                    } else if matches!(
+                        upper.as_str(),
+                        "FUNCTION" | "PROCEDURE" | "ENDFUNC" | "ENDPROC"
+                    ) {
+                        break;
+                    }
+                }
+
+                offset += token.len as usize;
+                i += 1;
+
+                if i > token_idx + 50 {
+                    break;
+                }
+            }
+        }
+
+        let param_list = if params.is_empty() {
+            String::new()
+        } else {
+            params.join(", ")
+        };
+
+        let label = format!("{} {}({})", kind, name, param_list);
+
+        Some(SignatureInformation {
+            label: label.clone(),
+            documentation: None,
+            parameters: Some(
+                params
+                    .iter()
+                    .map(|p| ParameterInformation {
+                        label: ParameterLabel::Simple(p.clone()),
+                        documentation: None,
+                    })
+                    .collect(),
+            ),
+            active_parameter: None,
+        })
+    }
 }
 
-/// Store for all open documents.
 pub struct DocumentStore {
     documents: DashMap<Url, Document>,
 }
@@ -902,13 +1043,10 @@ impl Default for DocumentStore {
     }
 }
 
-/// Find a similar keyword if the word looks like a typo.
-/// Currently disabled - too many false positives with VFP naming conventions.
 fn find_similar_keyword(_word: &str) -> Option<&'static str> {
     None
 }
 
-/// Try to close a block of the given type.
 fn close_block(
     stack: &mut Vec<(String, usize, Position)>,
     expected: &str,
@@ -916,7 +1054,6 @@ fn close_block(
     _offset: usize,
     _doc: &Document,
 ) -> bool {
-    // Find the most recent matching block
     for i in (0..stack.len()).rev() {
         if stack[i].0 == expected {
             stack.remove(i);
@@ -926,7 +1063,6 @@ fn close_block(
     false
 }
 
-/// Create an error diagnostic.
 fn make_error(message: &str, offset: usize, len: usize, doc: &Document) -> Diagnostic {
     let start = doc.offset_to_position(offset);
     let end = doc.offset_to_position(offset + len);
@@ -949,12 +1085,9 @@ mod tests {
 
     #[test]
     fn test_strings_with_backslashes() {
-        // VFP doesn't use backslash escapes - backslashes are literal
-        // This is important for file paths like "C:\Data\"
         let doc = Document::new(r#"#DEFINE DATA_PATH "C:\Data\""#.to_string());
         let diagnostics = doc.diagnostics();
 
-        // Should have no errors - the string is properly terminated
         let errors: Vec<_> = diagnostics
             .iter()
             .filter(|d| d.message.contains("Unterminated"))
@@ -968,7 +1101,6 @@ mod tests {
 
     #[test]
     fn test_preprocessor_with_if_keyword() {
-        // Keywords inside #DEFINE should not trigger block validation
         let code = r#"
 #DEFINE ASSERT(cond) IF .NOT. (cond) THEN MESSAGEBOX("Failed")
 FUNCTION Test
@@ -977,7 +1109,6 @@ ENDFUNCTION
         let doc = Document::new(code.to_string());
         let diagnostics = doc.diagnostics();
 
-        // Should have no errors - IF inside #DEFINE is not a block structure
         let errors: Vec<_> = diagnostics
             .iter()
             .filter(|d| d.message.contains("ENDIF"))
@@ -991,12 +1122,10 @@ ENDFUNCTION
 
     #[test]
     fn test_preprocessor_string_backslash() {
-        // Test the exact case from the bug report
         let code = r#"#DEFINE PATH_SEPARATOR "\""#;
         let doc = Document::new(code.to_string());
         let diagnostics = doc.diagnostics();
 
-        // Should have no errors
         let errors: Vec<_> = diagnostics
             .iter()
             .filter(|d| d.message.contains("Unterminated"))
@@ -1010,12 +1139,10 @@ ENDFUNCTION
 
     #[test]
     fn test_real_unclosed_block() {
-        // Make sure we still catch real errors
         let code = "IF .T.\n    ? \"Hello\"\n* Missing ENDIF\n";
         let doc = Document::new(code.to_string());
         let diagnostics = doc.diagnostics();
 
-        // Should report the missing ENDIF
         let errors: Vec<_> = diagnostics
             .iter()
             .filter(|d| d.message.contains("IF") || d.message.contains("ENDIF"))
@@ -1028,7 +1155,6 @@ ENDFUNCTION
 
     #[test]
     fn test_keywords_in_text_blocks() {
-        // Keywords inside TEXT blocks should not trigger validation
         let code = r#"
 TEXT TO cOutput
 Thank you for your order.
@@ -1038,7 +1164,6 @@ ENDTEXT
         let doc = Document::new(code.to_string());
         let diagnostics = doc.diagnostics();
 
-        // Should have no errors - "for" and "If" are just text
         let errors: Vec<_> = diagnostics
             .iter()
             .filter(|d| d.message.contains("IF") || d.message.contains("FOR"))
@@ -1052,7 +1177,6 @@ ENDTEXT
 
     #[test]
     fn test_keywords_in_comments() {
-        // Keywords in comments should not trigger validation
         let code = r#"
 * This is for future use
 * If we need to add more features
@@ -1062,7 +1186,6 @@ ENDFUNC
         let doc = Document::new(code.to_string());
         let diagnostics = doc.diagnostics();
 
-        // Should have no errors - "for" and "If" are in comments
         let errors: Vec<_> = diagnostics
             .iter()
             .filter(|d| d.message.contains("IF") || d.message.contains("FOR"))
@@ -1076,7 +1199,6 @@ ENDFUNC
 
     #[test]
     fn test_keywords_in_strings() {
-        // Keywords in strings should not trigger validation
         let code = r#"
 LOCAL cMsg
 cMsg = "This is for testing if strings work"
@@ -1085,11 +1207,72 @@ cMsg = "This is for testing if strings work"
         let doc = Document::new(code.to_string());
         let diagnostics = doc.diagnostics();
 
-        // Should have no errors - "for" and "if" are in strings
         let errors: Vec<_> = diagnostics
             .iter()
             .filter(|d| d.message.contains("IF") || d.message.contains("FOR"))
             .collect();
         assert_eq!(errors.len(), 0, "Should not report keywords inside strings");
+    }
+
+    #[test]
+    fn test_find_signature_with_lparameters() {
+        let code = r#"
+FUNCTION GetCustomerName(nCustomerId)
+    LOCAL cName
+    RETURN cName
+ENDFUNC
+
+PROCEDURE ProcessOrders
+    LPARAMETERS dStartDate, dEndDate
+    LOCAL nTotal
+    nTotal = 0
+ENDPROC
+"#;
+        let doc = Document::new(code.to_string());
+
+        let sig1 = doc.find_signature("GetCustomerName");
+        assert!(sig1.is_some(), "Should find GetCustomerName signature");
+        let sig1 = sig1.unwrap();
+        assert!(
+            sig1.label.contains("GetCustomerName"),
+            "Label should contain function name"
+        );
+        assert!(
+            sig1.label.contains("nCustomerId"),
+            "Label should contain parameter"
+        );
+
+        let sig2 = doc.find_signature("ProcessOrders");
+        assert!(sig2.is_some(), "Should find ProcessOrders signature");
+        let sig2 = sig2.unwrap();
+        assert!(
+            sig2.label.contains("ProcessOrders"),
+            "Label should contain procedure name"
+        );
+        assert!(
+            sig2.label.contains("dStartDate"),
+            "Label should contain first parameter"
+        );
+        assert!(
+            sig2.label.contains("dEndDate"),
+            "Label should contain second parameter"
+        );
+    }
+
+    #[test]
+    fn test_find_signature_no_params() {
+        let code = r#"
+FUNCTION GetDate
+    RETURN DATE()
+ENDFUNC
+"#;
+        let doc = Document::new(code.to_string());
+        let sig = doc.find_signature("GetDate");
+        assert!(sig.is_some(), "Should find GetDate signature");
+        let sig = sig.unwrap();
+        assert!(
+            sig.label.contains("GetDate()"),
+            "Label should show empty parameter list"
+        );
     }
 }

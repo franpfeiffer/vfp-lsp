@@ -2,17 +2,14 @@
 
 use crate::{LiteralKind, Token, TokenKind, tokenize};
 
-/// Helper to collect tokens from source.
 fn lex(source: &str) -> Vec<Token> {
     tokenize(source).collect()
 }
 
-/// Helper to get token kinds from source.
 fn lex_kinds(source: &str) -> Vec<TokenKind> {
     tokenize(source).map(|t| t.kind).collect()
 }
 
-/// Helper to get tokens with their text.
 fn lex_with_text(source: &str) -> Vec<(TokenKind, &str)> {
     let mut result = Vec::new();
     let mut pos = 0;
@@ -23,10 +20,6 @@ fn lex_with_text(source: &str) -> Vec<(TokenKind, &str)> {
     }
     result
 }
-
-// ═══════════════════════════════════════════════════════════════════════════
-// Whitespace and Newlines
-// ═══════════════════════════════════════════════════════════════════════════
 
 #[test]
 fn test_whitespace() {
@@ -78,10 +71,6 @@ fn test_line_continuation_with_spaces() {
     );
 }
 
-// ═══════════════════════════════════════════════════════════════════════════
-// Comments
-// ═══════════════════════════════════════════════════════════════════════════
-
 #[test]
 fn test_star_comment() {
     let tokens = lex_with_text("* this is a comment\ncode");
@@ -97,7 +86,6 @@ fn test_star_comment() {
 
 #[test]
 fn test_star_not_at_line_start() {
-    // Star not at line start should be multiplication
     let tokens = lex_kinds("a * b");
     assert_eq!(
         tokens,
@@ -141,14 +129,9 @@ fn test_note_comment() {
 
 #[test]
 fn test_note_as_identifier() {
-    // NOTE without space is an identifier
     let tokens = lex_kinds("NOTEPAD");
     assert_eq!(tokens, vec![TokenKind::Ident]);
 }
-
-// ═══════════════════════════════════════════════════════════════════════════
-// Boolean Literals
-// ═══════════════════════════════════════════════════════════════════════════
 
 #[test]
 fn test_boolean_literals() {
@@ -186,10 +169,6 @@ fn test_boolean_case_insensitive() {
     );
 }
 
-// ═══════════════════════════════════════════════════════════════════════════
-// Logical Operators
-// ═══════════════════════════════════════════════════════════════════════════
-
 #[test]
 fn test_dot_operators() {
     let tokens = lex_with_text(".AND. .OR. .NOT.");
@@ -204,10 +183,6 @@ fn test_dot_operators() {
         ]
     );
 }
-
-// ═══════════════════════════════════════════════════════════════════════════
-// Preprocessor Directives
-// ═══════════════════════════════════════════════════════════════════════════
 
 #[test]
 fn test_preprocessor() {
@@ -247,7 +222,6 @@ fn test_preprocessor_ifdef_ifndef() {
 
 #[test]
 fn test_hash_not_preprocessor() {
-    // Hash followed by non-identifier
     let tokens = lex_kinds("# 1");
     assert_eq!(
         tokens,
@@ -260,10 +234,6 @@ fn test_hash_not_preprocessor() {
         ]
     );
 }
-
-// ═══════════════════════════════════════════════════════════════════════════
-// Operators
-// ═══════════════════════════════════════════════════════════════════════════
 
 #[test]
 fn test_comparison_operators() {
@@ -333,10 +303,6 @@ fn test_special_operators() {
         ]
     );
 }
-
-// ═══════════════════════════════════════════════════════════════════════════
-// Delimiters
-// ═══════════════════════════════════════════════════════════════════════════
 
 #[test]
 fn test_delimiters() {
