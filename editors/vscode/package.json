@@ -2,7 +2,7 @@
   "name": "vfp-lsp",
   "displayName": "Visual FoxPro",
   "description": "Language support for Visual FoxPro",
-  "version": "0.2.0",
+  "version": "0.3.1",
   "publisher": "vfp-lsp",
   "license": "MIT",
   "repository": {
