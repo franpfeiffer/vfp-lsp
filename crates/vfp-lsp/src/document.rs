@@ -115,7 +115,7 @@ impl Document {
                     diagnostics.push(Diagnostic {
                         range: Range::new(start, end),
                         severity: Some(DiagnosticSeverity::ERROR),
-                        code: None,
+                        code: Some(NumberOrString::String("unterminated_string".to_string())),
                         code_description: None,
                         source: Some("vfp-lsp".to_string()),
                         message: "Unterminated string literal".to_string(),
@@ -153,7 +153,7 @@ impl Document {
                         diagnostics.push(Diagnostic {
                             range: Range::new(start, end),
                             severity: Some(DiagnosticSeverity::WARNING),
-                            code: None,
+                            code: Some(NumberOrString::String("misspelled_keyword".to_string())),
                             code_description: None,
                             source: Some("vfp-lsp".to_string()),
                             message: format!(
@@ -247,6 +247,7 @@ impl Document {
                             offset,
                             token.len as usize,
                             self,
+                            Some("orphaned_end"),
                         ));
                     }
                     offset += token.len as usize;
@@ -296,6 +297,7 @@ impl Document {
                                 offset,
                                 token.len as usize,
                                 self,
+                                Some("orphaned_end"),
                             ));
                         }
                     }
@@ -306,6 +308,7 @@ impl Document {
                                 offset,
                                 token.len as usize,
                                 self,
+                                Some("orphaned_end"),
                             ));
                         }
                     }
@@ -329,6 +332,7 @@ impl Document {
                                 offset,
                                 token.len as usize,
                                 self,
+                                Some("orphaned_end"),
                             ));
                         }
                     }
@@ -339,6 +343,7 @@ impl Document {
                                 offset,
                                 token.len as usize,
                                 self,
+                                Some("orphaned_end"),
                             ));
                         }
                     }
@@ -349,6 +354,7 @@ impl Document {
                                 offset,
                                 token.len as usize,
                                 self,
+                                Some("orphaned_end"),
                             ));
                         }
                     }
@@ -360,6 +366,7 @@ impl Document {
                                 offset,
                                 token.len as usize,
                                 self,
+                                Some("orphaned_end"),
                             ));
                         }
                     }
@@ -370,6 +377,7 @@ impl Document {
                                 offset,
                                 token.len as usize,
                                 self,
+                                Some("orphaned_end"),
                             ));
                         }
                     }
@@ -380,6 +388,7 @@ impl Document {
                                 offset,
                                 token.len as usize,
                                 self,
+                                Some("orphaned_end"),
                             ));
                         }
                     }
@@ -396,6 +405,7 @@ impl Document {
                                 offset,
                                 token.len as usize,
                                 self,
+                                Some("orphaned_end"),
                             ));
                         }
                     }
@@ -412,6 +422,7 @@ impl Document {
                                 offset,
                                 token.len as usize,
                                 self,
+                                Some("orphaned_end"),
                             ));
                         }
                     }
@@ -423,6 +434,7 @@ impl Document {
                                 offset,
                                 token.len as usize,
                                 self,
+                                Some("orphaned_end"),
                             ));
                         }
                     }
@@ -456,7 +468,7 @@ impl Document {
             diagnostics.push(Diagnostic {
                 range: Range::new(pos, pos),
                 severity: Some(DiagnosticSeverity::ERROR),
-                code: None,
+                code: Some(NumberOrString::String("unclosed_block".to_string())),
                 code_description: None,
                 source: Some("vfp-lsp".to_string()),
                 message: format!("Unclosed {}. Expected {}", kind.replace('_', " "), expected),
@@ -1067,13 +1079,13 @@ fn close_block(
     false
 }
 
-fn make_error(message: &str, offset: usize, len: usize, doc: &Document) -> Diagnostic {
+fn make_error(message: &str, offset: usize, len: usize, doc: &Document, code: Option<&str>) -> Diagnostic {
     let start = doc.offset_to_position(offset);
     let end = doc.offset_to_position(offset + len);
     Diagnostic {
         range: Range::new(start, end),
         severity: Some(DiagnosticSeverity::ERROR),
-        code: None,
+        code: code.map(|c| NumberOrString::String(c.to_string())),
         code_description: None,
         source: Some("vfp-lsp".to_string()),
         message: message.to_string(),

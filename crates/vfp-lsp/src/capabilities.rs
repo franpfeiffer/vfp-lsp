@@ -55,7 +55,13 @@ pub fn server_capabilities() -> ServerCapabilities {
         folding_range_provider: Some(FoldingRangeProviderCapability::Simple(true)),
 
         document_formatting_provider: None,
-        code_action_provider: None,
+        code_action_provider: Some(CodeActionProviderCapability::Options(
+            CodeActionOptions {
+                code_action_kinds: Some(vec![CodeActionKind::QUICKFIX]),
+                resolve_provider: Some(false),
+                work_done_progress_options: WorkDoneProgressOptions::default(),
+            },
+        )),
         code_lens_provider: None,
         execute_command_provider: None,
         workspace: None,

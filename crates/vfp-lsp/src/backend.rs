@@ -72,6 +72,32 @@ impl Backend {
                 .await;
         }
     }
+
+    fn create_text_edit(uri: Url, range: Range, new_text: String) -> WorkspaceEdit {
+        let mut changes = std::collections::HashMap::new();
+        changes.insert(uri, vec![TextEdit { range, new_text }]);
+        WorkspaceEdit {
+            changes: Some(changes),
+            document_changes: None,
+            change_annotations: None,
+        }
+    }
+
+    fn ranges_overlap(a: &Range, b: &Range) -> bool {
+        if a.end.line < b.start.line {
+            return false;
+        }
+        if a.end.line == b.start.line && a.end.character < b.start.character {
+            return false;
+        }
+        if b.end.line < a.start.line {
+            return false;
+        }
+        if b.end.line == a.start.line && b.end.character < a.start.character {
+            return false;
+        }
+        true
+    }
 }
 
 #[tower_lsp::async_trait]
@@ -657,6 +683,159 @@ impl LanguageServer for Backend {
             Ok(Some(ranges))
         }
     }
+
+    async fn code_action(&self, params: CodeActionParams) -> Result<Option<CodeActionResponse>> {
+        let uri = &params.text_document.uri;
+        let Some(doc) = self.documents.get(uri) else {
+            return Ok(None);
+        };
+
+        let diagnostics = doc.diagnostics();
+        let mut actions = Vec::new();
+
+        for diagnostic in diagnostics {
+            if !Self::ranges_overlap(&diagnostic.range, &params.range) {
+                continue;
+            }
+
+            if let Some(NumberOrString::String(code)) = &diagnostic.code {
+                let action = match code.as_str() {
+                    "unterminated_string" => self.fix_unterminated_string(uri, &diagnostic),
+                    "misspelled_keyword" => self.fix_misspelled_keyword(uri, &diagnostic),
+                    "unclosed_block" => self.fix_unclosed_block(uri, &diagnostic),
+                    "orphaned_end" => Some(self.fix_orphaned_end(uri, &diagnostic)),
+                    _ => None,
+                };
+
+                if let Some(action) = action {
+                    actions.push(CodeActionOrCommand::CodeAction(action));
+                }
+            }
+        }
+
+        if actions.is_empty() {
+            Ok(None)
+        } else {
+            Ok(Some(actions))
+        }
+    }
+}
+
+impl Backend {
+    fn fix_unterminated_string(&self, uri: &Url, diagnostic: &Diagnostic) -> Option<CodeAction> {
+        let doc = self.documents.get(uri)?;
+        let offset = doc.position_to_offset(diagnostic.range.start);
+        let (token, _) = doc.token_at_offset(offset)?;
+
+        let (closing_char, description) = match token.kind {
+            TokenKind::Literal { kind: vfp_lexer::LiteralKind::StringDouble { terminated: false } } => {
+                ("\"", "double quote")
+            }
+            TokenKind::Literal { kind: vfp_lexer::LiteralKind::StringSingle { terminated: false } } => {
+                ("'", "single quote")
+            }
+            TokenKind::Literal { kind: vfp_lexer::LiteralKind::StringBracket { terminated: false } } => {
+                ("]", "bracket")
+            }
+            _ => return None,
+        };
+
+        let edit = Self::create_text_edit(
+            uri.clone(),
+            Range::new(diagnostic.range.end, diagnostic.range.end),
+            closing_char.to_string(),
+        );
+
+        Some(CodeAction {
+            title: format!("Add closing {}", description),
+            kind: Some(CodeActionKind::QUICKFIX),
+            diagnostics: Some(vec![diagnostic.clone()]),
+            edit: Some(edit),
+            is_preferred: Some(true),
+            command: None,
+            disabled: None,
+            data: None,
+        })
+    }
+
+    fn fix_misspelled_keyword(&self, uri: &Url, diagnostic: &Diagnostic) -> Option<CodeAction> {
+        let suggestion = extract_suggestion(&diagnostic.message)?;
+
+        let edit = Self::create_text_edit(
+            uri.clone(),
+            diagnostic.range,
+            suggestion.clone(),
+        );
+
+        Some(CodeAction {
+            title: format!("Change to '{}'", suggestion),
+            kind: Some(CodeActionKind::QUICKFIX),
+            diagnostics: Some(vec![diagnostic.clone()]),
+            edit: Some(edit),
+            is_preferred: Some(true),
+            command: None,
+            disabled: None,
+            data: None,
+        })
+    }
+
+    fn fix_unclosed_block(&self, uri: &Url, diagnostic: &Diagnostic) -> Option<CodeAction> {
+        let end_keyword = extract_expected(&diagnostic.message)?;
+        let doc = self.documents.get(uri)?;
+
+        let lines = doc.content.lines().count() as u32;
+        let last_line_len = doc.content.lines().last().map(|l| l.len()).unwrap_or(0) as u32;
+        let insert_pos = Position::new(lines.saturating_sub(1), last_line_len);
+
+        let edit = Self::create_text_edit(
+            uri.clone(),
+            Range::new(insert_pos, insert_pos),
+            format!("\n{}", end_keyword),
+        );
+
+        Some(CodeAction {
+            title: format!("Add {}", end_keyword),
+            kind: Some(CodeActionKind::QUICKFIX),
+            diagnostics: Some(vec![diagnostic.clone()]),
+            edit: Some(edit),
+            is_preferred: Some(true),
+            command: None,
+            disabled: None,
+            data: None,
+        })
+    }
+
+    fn fix_orphaned_end(&self, uri: &Url, diagnostic: &Diagnostic) -> CodeAction {
+        let edit = Self::create_text_edit(
+            uri.clone(),
+            diagnostic.range,
+            String::new(),
+        );
+
+        CodeAction {
+            title: "Remove orphaned statement".to_string(),
+            kind: Some(CodeActionKind::QUICKFIX),
+            diagnostics: Some(vec![diagnostic.clone()]),
+            edit: Some(edit),
+            is_preferred: Some(true),
+            command: None,
+            disabled: None,
+            data: None,
+        }
+    }
+}
+
+fn extract_suggestion(msg: &str) -> Option<String> {
+    let start = msg.find('\'')?;
+    let end = msg[start+1..].find('\'')?;
+    Some(msg[start+1..start+1+end].to_string())
+}
+
+fn extract_expected(msg: &str) -> Option<String> {
+    let pos = msg.find("Expected ")?;
+    let rest = &msg[pos + 9..];
+    let keyword = rest.split(" or").next()?.trim();
+    Some(keyword.to_string())
 }
 
 fn find_function_name_at_position(
