@@ -54,7 +54,7 @@ pub fn server_capabilities() -> ServerCapabilities {
         rename_provider: Some(OneOf::Left(true)),
         folding_range_provider: Some(FoldingRangeProviderCapability::Simple(true)),
 
-        document_formatting_provider: None,
+        document_formatting_provider: Some(OneOf::Left(true)),
         code_action_provider: Some(CodeActionProviderCapability::Options(CodeActionOptions {
             code_action_kinds: Some(vec![CodeActionKind::QUICKFIX]),
             resolve_provider: Some(false),

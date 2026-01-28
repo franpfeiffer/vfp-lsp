@@ -719,6 +719,22 @@ impl LanguageServer for Backend {
             Ok(Some(actions))
         }
     }
+
+    async fn formatting(&self, params: DocumentFormattingParams) -> Result<Option<Vec<TextEdit>>> {
+        let uri = &params.text_document.uri;
+
+        let Some(doc) = self.documents.get(uri) else {
+            return Ok(None);
+        };
+
+        let edits = format_document(&doc);
+
+        if edits.is_empty() {
+            Ok(None)
+        } else {
+            Ok(Some(edits))
+        }
+    }
 }
 
 impl Backend {
@@ -828,6 +844,111 @@ fn extract_expected(msg: &str) -> Option<String> {
     let rest = &msg[pos + 9..];
     let keyword = rest.split(" or").next()?.trim();
     Some(keyword.to_string())
+}
+
+fn format_document(doc: &crate::document::Document) -> Vec<TextEdit> {
+    let mut edits = Vec::new();
+    let mut indent_level = 0u32;
+    let mut in_text_block = false;
+
+    for (line_num, line) in doc.content.lines().enumerate() {
+        let trimmed = line.trim_start();
+
+        if trimmed.is_empty() {
+            continue;
+        }
+
+        let leading_spaces = line.len() - trimmed.len();
+        let first_word = trimmed
+            .split_whitespace()
+            .next()
+            .unwrap_or("")
+            .to_ascii_uppercase();
+
+        // Handle TEXT blocks
+        if first_word == "TEXT" {
+            in_text_block = true;
+            continue;
+        } else if first_word == "ENDTEXT" {
+            in_text_block = false;
+            // Format ENDTEXT at level 0
+            if leading_spaces != 0 {
+                let start = Position::new(line_num as u32, 0);
+                let end = Position::new(line_num as u32, leading_spaces as u32);
+                edits.push(TextEdit {
+                    range: Range::new(start, end),
+                    new_text: String::new(),
+                });
+            }
+            continue;
+        }
+
+        if in_text_block {
+            continue;
+        }
+
+        // Determine target indent
+        let mut target_indent = indent_level;
+
+        let decrements_before = matches!(
+            first_word.as_str(),
+            "ENDIF"
+                | "ENDFOR"
+                | "ENDWHILE"
+                | "ENDDO"
+                | "ENDSCAN"
+                | "ENDCASE"
+                | "ENDTRY"
+                | "ENDWITH"
+                | "ENDFUNC"
+                | "ENDPROC"
+                | "ENDDEFINE"
+                | "ELSE"
+                | "ELSEIF"
+                | "CATCH"
+                | "FINALLY"
+                | "CASE"
+                | "OTHERWISE"
+        );
+
+        if decrements_before && target_indent > 0 {
+            target_indent -= 1;
+        }
+
+        let expected_indent = (target_indent * 2) as usize;
+
+        // Generate edit if needed
+        if leading_spaces != expected_indent {
+            let start = Position::new(line_num as u32, 0);
+            let end = Position::new(line_num as u32, leading_spaces as u32);
+            edits.push(TextEdit {
+                range: Range::new(start, end),
+                new_text: " ".repeat(expected_indent),
+            });
+        }
+
+        // Update indent level
+        match first_word.as_str() {
+            "IF" | "FOR" | "WHILE" | "SCAN" | "TRY" | "WITH" | "DO" => {
+                indent_level += 1;
+            }
+            "FUNCTION" | "PROCEDURE" | "DEFINE" => {
+                indent_level = 1;
+            }
+            "ENDFUNC" | "ENDPROC" | "ENDDEFINE" => {
+                indent_level = 0;
+            }
+            "ENDIF" | "ENDFOR" | "ENDWHILE" | "ENDDO" | "ENDSCAN" | "ENDCASE" | "ENDTRY"
+            | "ENDWITH" => {
+                if indent_level > 0 && !decrements_before {
+                    indent_level -= 1;
+                }
+            }
+            _ => {}
+        }
+    }
+
+    edits
 }
 
 fn find_function_name_at_position(
