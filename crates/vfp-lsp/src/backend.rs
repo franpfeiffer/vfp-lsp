@@ -728,15 +728,15 @@ impl Backend {
         let (token, _) = doc.token_at_offset(offset)?;
 
         let (closing_char, description) = match token.kind {
-            TokenKind::Literal { kind: vfp_lexer::LiteralKind::StringDouble { terminated: false } } => {
-                ("\"", "double quote")
-            }
-            TokenKind::Literal { kind: vfp_lexer::LiteralKind::StringSingle { terminated: false } } => {
-                ("'", "single quote")
-            }
-            TokenKind::Literal { kind: vfp_lexer::LiteralKind::StringBracket { terminated: false } } => {
-                ("]", "bracket")
-            }
+            TokenKind::Literal {
+                kind: vfp_lexer::LiteralKind::StringDouble { terminated: false },
+            } => ("\"", "double quote"),
+            TokenKind::Literal {
+                kind: vfp_lexer::LiteralKind::StringSingle { terminated: false },
+            } => ("'", "single quote"),
+            TokenKind::Literal {
+                kind: vfp_lexer::LiteralKind::StringBracket { terminated: false },
+            } => ("]", "bracket"),
             _ => return None,
         };
 
@@ -761,11 +761,7 @@ impl Backend {
     fn fix_misspelled_keyword(&self, uri: &Url, diagnostic: &Diagnostic) -> Option<CodeAction> {
         let suggestion = extract_suggestion(&diagnostic.message)?;
 
-        let edit = Self::create_text_edit(
-            uri.clone(),
-            diagnostic.range,
-            suggestion.clone(),
-        );
+        let edit = Self::create_text_edit(uri.clone(), diagnostic.range, suggestion.clone());
 
         Some(CodeAction {
             title: format!("Change to '{}'", suggestion),
@@ -806,11 +802,7 @@ impl Backend {
     }
 
     fn fix_orphaned_end(&self, uri: &Url, diagnostic: &Diagnostic) -> CodeAction {
-        let edit = Self::create_text_edit(
-            uri.clone(),
-            diagnostic.range,
-            String::new(),
-        );
+        let edit = Self::create_text_edit(uri.clone(), diagnostic.range, String::new());
 
         CodeAction {
             title: "Remove orphaned statement".to_string(),
@@ -827,8 +819,8 @@ impl Backend {
 
 fn extract_suggestion(msg: &str) -> Option<String> {
     let start = msg.find('\'')?;
-    let end = msg[start+1..].find('\'')?;
-    Some(msg[start+1..start+1+end].to_string())
+    let end = msg[start + 1..].find('\'')?;
+    Some(msg[start + 1..start + 1 + end].to_string())
 }
 
 fn extract_expected(msg: &str) -> Option<String> {

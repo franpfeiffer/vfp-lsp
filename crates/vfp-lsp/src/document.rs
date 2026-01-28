@@ -1079,7 +1079,13 @@ fn close_block(
     false
 }
 
-fn make_error(message: &str, offset: usize, len: usize, doc: &Document, code: Option<&str>) -> Diagnostic {
+fn make_error(
+    message: &str,
+    offset: usize,
+    len: usize,
+    doc: &Document,
+    code: Option<&str>,
+) -> Diagnostic {
     let start = doc.offset_to_position(offset);
     let end = doc.offset_to_position(offset + len);
     Diagnostic {
