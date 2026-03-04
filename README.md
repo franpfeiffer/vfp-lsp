@@ -1,5 +1,7 @@
 # VFP-LSP
 
+### Is getting archive because my company pull the plug on it. I might come back at some point...
+
 [![Release](https://github.com/franpfeiffer/vfp-lsp/workflows/Release/badge.svg)](https://github.com/franpfeiffer/vfp-lsp/releases)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
